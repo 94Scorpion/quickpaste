@@ -33,56 +33,77 @@ app.get('/', (req, res) => {
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="QuickPaste">
-  <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/93/93634.png">
+  
+  <!-- Logo moderno in formato SVG come Favicon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M13 2L3 14h9l-1 8 10-12h-9l1-8z'/></svg>">
+  
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; background: #f4f6f8; margin: 0; padding: 20px; display: flex; justify-content: center; }
-    .card { background: white; max-width: 520px; width: 100%; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); text-align: center; }
-    h1 { margin-top: 0; color: #111827; font-size: 24px; }
-    textarea { width: 100%; height: 100px; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box; font-size: 15px; margin-bottom: 12px; resize: vertical; }
-    input[type="text"] { width: 100%; padding: 12px; font-size: 18px; text-align: center; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box; letter-spacing: 4px; margin-bottom: 15px; }
-    input[type="file"] { margin-bottom: 15px; width: 100%; font-size: 14px; }
-    button { width: 100%; background: #2563eb; color: white; border: none; padding: 12px; font-size: 16px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: background 0.2s; margin-top: 5px; }
-    button:hover { background: #1d4ed8; }
-    .code-display { font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #2563eb; margin: 15px 0; }
-    .hidden { display: none; }
-    .divider { margin: 25px 0; border-top: 1px solid #e5e7eb; position: relative; }
-    .divider span { position: absolute; top: -10px; background: white; padding: 0 10px; left: 50%; transform: translateX(-50%); color: #6b7280; font-size: 13px; }
-    #qrcode img { margin: 15px auto; display: block; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    .url-hint { font-size: 12px; color: #6b7280; word-break: break-all; margin-top: 5px; }
-    .download-btn { background: #059669; text-decoration: none; color: white; display: block; padding: 14px; border-radius: 8px; font-weight: 700; margin-top: 15px; font-size: 16px; }
-    .info-box { background: #f3f4f6; border-radius: 8px; padding: 12px; margin-top: 10px; text-align: left; font-size: 13px; color: #374151; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f1f5f9; margin: 0; padding: 20px; display: flex; justify-content: center; min-height: 100vh; box-sizing: border-box; }
+    .card { background: #ffffff; max-width: 480px; width: 100%; padding: 28px; border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04); text-align: center; margin: auto; }
     
-    /* Stili Sezione Privacy e Note Legali */
-    .privacy-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-top: 25px; text-align: left; font-size: 12px; color: #475569; line-height: 1.5; }
-    .privacy-card h3 { margin-top: 0; font-size: 14px; color: #1e293b; display: flex; align-items: center; gap: 6px; }
+    /* Logo Header Moderno */
+    .brand-header { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 6px; }
+    .logo-icon { width: 38px; height: 38px; background: linear-gradient(135deg, #2563eb, #3b82f6); border-radius: 10px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); }
+    .logo-icon svg { width: 22px; height: 22px; stroke: #ffffff; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+    h1 { margin: 0; color: #0f172a; font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
+    
+    .subtitle { color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 20px; }
+    textarea { width: 100%; height: 95px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 10px; box-sizing: border-box; font-size: 14px; margin-bottom: 14px; resize: vertical; font-family: inherit; transition: border-color 0.2s; }
+    textarea:focus, input[type="text"]:focus { outline: none; border-color: #2563eb; }
+    input[type="text"] { width: 100%; padding: 12px; font-size: 20px; text-align: center; border: 1px solid #cbd5e1; border-radius: 10px; box-sizing: border-box; letter-spacing: 6px; margin-bottom: 15px; font-weight: 600; font-family: monospace; }
+    input[type="file"] { margin-bottom: 15px; width: 100%; font-size: 13px; color: #475569; }
+    button { width: 100%; background: #2563eb; color: white; border: none; padding: 13px; font-size: 15px; font-weight: 600; border-radius: 10px; cursor: pointer; transition: background 0.2s, transform 0.1s; margin-top: 5px; }
+    button:hover { background: #1d4ed8; }
+    button:active { transform: scale(0.99); }
+    .code-display { font-size: 34px; font-weight: 800; letter-spacing: 6px; color: #2563eb; margin: 15px 0; font-family: monospace; }
+    .hidden { display: none; }
+    .divider { margin: 24px 0; border-top: 1px solid #e2e8f0; position: relative; }
+    .divider span { position: absolute; top: -10px; background: white; padding: 0 12px; left: 50%; transform: translateX(-50%); color: #94a3b8; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; }
+    #qrcode img { margin: 15px auto; display: block; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .url-hint { font-size: 12px; color: #64748b; word-break: break-all; margin-top: 5px; }
+    .download-btn { background: #059669; text-decoration: none; color: white; display: block; padding: 14px; border-radius: 10px; font-weight: 700; margin-top: 15px; font-size: 15px; }
+    .info-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; margin-top: 10px; text-align: left; font-size: 13px; color: #334155; }
+    
+    /* Sezione Privacy & Legal */
+    .privacy-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin-top: 25px; text-align: left; font-size: 12px; color: #475569; line-height: 1.5; }
+    .privacy-card h3 { margin-top: 0; font-size: 13px; color: #0f172a; display: flex; align-items: center; gap: 6px; font-weight: 700; }
     .privacy-card ul { padding-left: 18px; margin: 8px 0; }
     .privacy-card li { margin-bottom: 6px; }
-    .disclaimer { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 10px; border-radius: 6px; margin-top: 10px; font-weight: 500; }
+    .disclaimer { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 10px; border-radius: 8px; margin-top: 12px; font-size: 11px; }
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>🚀 QuickPaste Transfer</h1>
-    <p style="color: #6b7280; font-size: 14px; margin-top: -8px;">Trasferimento diretto, temporaneo e in alta qualità.</p>
+    
+    <!-- HEADER CON LOGO MODERNO -->
+    <div class="brand-header">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24">
+          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+        </svg>
+      </div>
+      <h1>QuickPaste</h1>
+    </div>
+    <p class="subtitle">Trasferimento dati ultra-veloce e privato</p>
 
     <!-- INVIA -->
     <div id="send-section">
-      <textarea id="text-input" placeholder="Incolla qui il testo o un link..."></textarea>
+      <textarea id="text-input" placeholder="Incolla qui testo, link o note..."></textarea>
       
       <div style="text-align: left; margin-bottom: 10px;">
-        <label style="font-size: 13px; font-weight: 600; color: #374151;">Seleziona File / Foto Originale:</label>
-        <input type="file" id="file-input" />
+        <label style="font-size: 12px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Foto / File Originale RAW:</label>
+        <input type="file" id="file-input" style="margin-top: 6px;" />
       </div>
 
       <button onclick="createRoom()">Genera Codice di Trasferimento</button>
     </div>
 
     <div id="result-section" class="hidden">
-      <p style="margin-bottom: 5px;">Inserisci questo codice o inquadra il QR Code sull'altro dispositivo:</p>
+      <p style="margin-bottom: 5px; font-size: 14px; color: #475569;">Inserisci questo codice o inquadra il QR Code:</p>
       <div id="room-code" class="code-display">----</div>
       <div id="qrcode"></div>
       <div id="direct-link" class="url-hint"></div>
-      <p style="color: #059669; font-size: 14px; font-weight: 600; margin-top: 15px;" id="status-msg">In attesa della connessione dell'altro dispositivo...</p>
+      <p style="color: #059669; font-size: 14px; font-weight: 600; margin-top: 15px;" id="status-msg">In attesa del dispositivo ricevente...</p>
     </div>
 
     <div class="divider"><span>OPPURE RICEVI</span></div>
@@ -96,7 +117,7 @@ app.get('/', (req, res) => {
     <div id="received-content" class="hidden" style="margin-top: 20px;">
       <div id="received-text-box" class="hidden">
         <textarea id="received-text" readonly></textarea>
-        <button onclick="copyToClipboard()" style="background: #4b5563;">Copia negli appunti</button>
+        <button onclick="copyToClipboard()" style="background: #475569;">Copia negli appunti</button>
       </div>
 
       <div id="received-file-box" class="hidden">
@@ -105,16 +126,16 @@ app.get('/', (req, res) => {
       </div>
     </div>
 
-    <!-- SEZIONE PRIVACY E DISCLAIMER -->
+    <!-- PRIVACY E NOTE -->
     <div class="privacy-card">
-      <h3>🔒 Privacy e Sicurezza dei Dati</h3>
+      <h3>🔒 Privacy e Sicurezza</h3>
       <ul>
-        <li><strong>Nessun salvataggio:</strong> I file e i testi inviati non vengono salvati su disco o database. Risiedono temporaneamente nella memoria volatile (RAM) e vengono <strong>eliminati istantaneamente</strong> non appena completato il download o scadtuti i 5 minuti.</li>
-        <li><strong>Accesso Riservato:</strong> I dati sono raggiungibili <strong>esclusivamente</strong> da chi possiede il PIN univoco a 4 cifre o scansiona il QR Code generato. Nessun altro utente o sistema esterno può consultarli.</li>
-        <li><strong>Condivisione responsabile:</strong> Presta attenzione a chi fornisci il codice o il link di trasferimento.</li>
+        <li><strong>Memoria volatile:</strong> Dati e file rimangono temporaneamente nella RAM e vengono <strong>distrutti subito</strong> dopo il download o allo scadere di 5 minuti.</li>
+        <li><strong>Protezione PIN:</strong> Il contenuto è accessibile solo a chi dispone del PIN di 4 cifre o scansiona il QR Code.</li>
+        <li><strong>Nessun Tracciamento:</strong> Nessun file viene salvato su disco né associato al tuo profilo.</li>
       </ul>
       <div class="disclaimer">
-        ⚠️ <strong>Note di Responsabilità:</strong> Il servizio viene fornito "così com'è". L'utente si assume la piena responsabilità di conservare e salvare i propri dati. Se il destinatario non effettua il download prima dell'eliminazione del file o dello scadere del timer, il contenuto andrà perso e dovrà essere ricaricato.
+        ⚠️ <strong>Note di Responsabilità:</strong> Il servizio viene fornito "così com'è". L'utente è responsabile del salvataggio dei propri dati prima della scadenza del timer o della chiusura della sessione.
       </div>
     </div>
 
@@ -175,7 +196,7 @@ app.get('/', (req, res) => {
           document.getElementById('qrcode').innerHTML = '<img src="' + data.qr + '" width="180" height="180" />';
           document.getElementById('direct-link').innerText = 'Link diretto: ' + data.targetUrl;
         } else if (data.type === 'CONNECTED') {
-          document.getElementById('status-msg').innerText = '✅ Dispositivo connesso! File inviato.';
+          document.getElementById('status-msg').innerText = '✅ Dispositivo connesso! Trasferimento avviato.';
         }
       };
     }
