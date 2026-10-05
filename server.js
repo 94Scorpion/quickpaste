@@ -9,12 +9,12 @@ const PORT = process.env.PORT || 3000;
 const app = express();
 const server = http.createServer(app);
 
-// Limite a 50MB per gestire immagini ad alta risoluzione
-const wss = new WebSocket.Server({ server, maxPayload: 50 * 1024 * 1024 });
+// Limite a 100MB per gestire più file contemporaneamente
+const wss = new WebSocket.Server({ server, maxPayload: 100 * 1024 * 1024 });
 
 const rooms = new Map();
 
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '100mb' }));
 
 app.get('/manifest.json', (req, res) => {
   res.sendFile(path.join(__dirname, 'manifest.json'));
@@ -27,21 +27,19 @@ app.get('/', (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QuickPaste - Trasferimento Sicuro & Privato</title>
+  <title>QuickPaste - Trasferimento Multiplo Sicuro</title>
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#2563eb">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="QuickPaste">
   
-  <!-- Logo moderno in formato SVG come Favicon -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M13 2L3 14h9l-1 8 10-12h-9l1-8z'/></svg>">
   
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f1f5f9; margin: 0; padding: 20px; display: flex; justify-content: center; min-height: 100vh; box-sizing: border-box; }
-    .card { background: #ffffff; max-width: 480px; width: 100%; padding: 28px; border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04); text-align: center; margin: auto; }
+    .card { background: #ffffff; max-width: 500px; width: 100%; padding: 28px; border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04); text-align: center; margin: auto; }
     
-    /* Logo Header Moderno */
     .brand-header { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 6px; }
     .logo-icon { width: 38px; height: 38px; background: linear-gradient(135deg, #2563eb, #3b82f6); border-radius: 10px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); }
     .logo-icon svg { width: 22px; height: 22px; stroke: #ffffff; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
@@ -61,10 +59,10 @@ app.get('/', (req, res) => {
     .divider span { position: absolute; top: -10px; background: white; padding: 0 12px; left: 50%; transform: translateX(-50%); color: #94a3b8; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; }
     #qrcode img { margin: 15px auto; display: block; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
     .url-hint { font-size: 12px; color: #64748b; word-break: break-all; margin-top: 5px; }
-    .download-btn { background: #059669; text-decoration: none; color: white; display: block; padding: 14px; border-radius: 10px; font-weight: 700; margin-top: 15px; font-size: 15px; }
-    .info-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; margin-top: 10px; text-align: left; font-size: 13px; color: #334155; }
     
-    /* Sezione Privacy & Legal */
+    .file-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; text-align: left; display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #334155; }
+    .download-btn { background: #059669; text-decoration: none; color: white; padding: 6px 12px; border-radius: 6px; font-weight: 600; font-size: 12px; display: inline-block; }
+    
     .privacy-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin-top: 25px; text-align: left; font-size: 12px; color: #475569; line-height: 1.5; }
     .privacy-card h3 { margin-top: 0; font-size: 13px; color: #0f172a; display: flex; align-items: center; gap: 6px; font-weight: 700; }
     .privacy-card ul { padding-left: 18px; margin: 8px 0; }
@@ -75,7 +73,6 @@ app.get('/', (req, res) => {
 <body>
   <div class="card">
     
-    <!-- HEADER CON LOGO MODERNO -->
     <div class="brand-header">
       <div class="logo-icon">
         <svg viewBox="0 0 24 24">
@@ -91,8 +88,9 @@ app.get('/', (req, res) => {
       <textarea id="text-input" placeholder="Incolla qui testo, link o note..."></textarea>
       
       <div style="text-align: left; margin-bottom: 10px;">
-        <label style="font-size: 12px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Foto / File Originale RAW:</label>
-        <input type="file" id="file-input" style="margin-top: 6px;" />
+        <label style="font-size: 12px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Seleziona Foto / File (Multipli):</label>
+        <!-- multiple permette la selezione di più file contemporaneamente -->
+        <input type="file" id="file-input" multiple style="margin-top: 6px;" />
       </div>
 
       <button onclick="createRoom()">Genera Codice di Trasferimento</button>
@@ -115,14 +113,15 @@ app.get('/', (req, res) => {
     </div>
 
     <div id="received-content" class="hidden" style="margin-top: 20px;">
-      <div id="received-text-box" class="hidden">
+      <!-- Sezione Testo Ricevuto -->
+      <div id="received-text-box" class="hidden" style="margin-bottom: 15px;">
         <textarea id="received-text" readonly></textarea>
         <button onclick="copyToClipboard()" style="background: #475569;">Copia negli appunti</button>
       </div>
 
-      <div id="received-file-box" class="hidden">
-        <div class="info-box" id="file-info"></div>
-        <a id="download-link" class="download-btn" download>💾 Scarica File Originale</a>
+      <!-- Lista File Ricevuti -->
+      <div id="received-files-box" class="hidden">
+        <div id="files-list"></div>
       </div>
     </div>
 
@@ -157,29 +156,29 @@ app.get('/', (req, res) => {
     async function createRoom() {
       const text = document.getElementById('text-input').value.trim();
       const fileInput = document.getElementById('file-input');
-      const file = fileInput.files[0];
+      const files = fileInput.files;
 
-      if (!text && !file) {
-        return alert('Inserisci del testo oppure seleziona un file/foto!');
+      if (!text && files.length === 0) {
+        return alert('Inserisci del testo oppure seleziona almeno un file/foto!');
       }
 
-      let payloadData = null;
+      let payloadData = {
+        text: text || null,
+        files: []
+      };
 
-      if (file) {
-        const arrayBuffer = await file.arrayBuffer();
-        const base64 = arrayBufferToBase64(arrayBuffer);
-        payloadData = {
-          type: 'FILE',
-          fileName: file.name,
-          fileType: file.type || 'application/octet-stream',
-          fileSize: file.size,
-          fileData: base64
-        };
-      } else {
-        payloadData = {
-          type: 'TEXT',
-          content: text
-        };
+      if (files.length > 0) {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const arrayBuffer = await file.arrayBuffer();
+          const base64 = arrayBufferToBase64(arrayBuffer);
+          payloadData.files.push({
+            fileName: file.name,
+            fileType: file.type || 'application/octet-stream',
+            fileSize: file.size,
+            fileData: base64
+          });
+        }
       }
 
       ws = new WebSocket(protocol + '//' + location.host);
@@ -196,7 +195,7 @@ app.get('/', (req, res) => {
           document.getElementById('qrcode').innerHTML = '<img src="' + data.qr + '" width="180" height="180" />';
           document.getElementById('direct-link').innerText = 'Link diretto: ' + data.targetUrl;
         } else if (data.type === 'CONNECTED') {
-          document.getElementById('status-msg').innerText = '✅ Dispositivo connesso! Trasferimento avviato.';
+          document.getElementById('status-msg').innerText = '✅ Dispositivo connesso! Trasferimento completato.';
         }
       };
     }
@@ -218,24 +217,34 @@ app.get('/', (req, res) => {
 
           const payload = data.payload;
 
-          if (payload.type === 'TEXT') {
+          // Gestione Testo
+          if (payload.text) {
             document.getElementById('received-text-box').classList.remove('hidden');
-            document.getElementById('received-text').value = payload.content;
-          } else if (payload.type === 'FILE') {
-            document.getElementById('received-file-box').classList.remove('hidden');
-            
-            const blob = base64ToBlob(payload.fileData, payload.fileType);
-            const blobUrl = URL.createObjectURL(blob);
+            document.getElementById('received-text').value = payload.text;
+          }
 
-            document.getElementById('file-info').innerHTML = \`
-              <strong>Nome File:</strong> \${payload.fileName}<br>
-              <strong>Dimensione:</strong> \${formatBytes(blob.size)}<br>
-              <strong>Tipo:</strong> \${payload.fileType || 'Generico'}
-            \`;
+          // Gestione File Multipli
+          if (payload.files && payload.files.length > 0) {
+            const filesBox = document.getElementById('received-files-box');
+            const filesList = document.getElementById('files-list');
+            filesBox.classList.remove('hidden');
+            filesList.innerHTML = '';
 
-            const downloadBtn = document.getElementById('download-link');
-            downloadBtn.href = blobUrl;
-            downloadBtn.download = payload.fileName;
+            payload.files.forEach((fileObj, index) => {
+              const blob = base64ToBlob(fileObj.fileData, fileObj.fileType);
+              const blobUrl = URL.createObjectURL(blob);
+
+              const itemDiv = document.createElement('div');
+              itemDiv.className = 'file-item';
+              itemDiv.innerHTML = \`
+                <div>
+                  <strong>\${fileObj.fileName}</strong><br>
+                  <span style="color: #64748b; font-size: 11px;">\${formatBytes(blob.size)}</span>
+                </div>
+                <a href="\${blobUrl}" download="\${fileObj.fileName}" class="download-btn">💾 Scarica</a>
+              \`;
+              filesList.appendChild(itemDiv);
+            });
           }
         } else if (data.type === 'ERROR') {
           alert(data.message);
