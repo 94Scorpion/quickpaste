@@ -50,24 +50,40 @@ app.get('/', (req, res) => {
     textarea:focus, input[type="text"]:focus { outline: none; border-color: #2563eb; }
     input[type="text"] { width: 100%; padding: 12px; font-size: 20px; text-align: center; border: 1px solid #cbd5e1; border-radius: 10px; box-sizing: border-box; letter-spacing: 6px; margin-bottom: 15px; font-weight: 600; font-family: monospace; }
     input[type="file"] { margin-bottom: 15px; width: 100%; font-size: 13px; color: #475569; }
+    
+    /* Area Drag & Drop */
+    .drop-zone { border: 2px dashed #cbd5e1; border-radius: 10px; padding: 15px; text-align: center; background: #f8fafc; cursor: pointer; transition: background 0.2s, border-color 0.2s; margin-bottom: 15px; }
+    .drop-zone.dragover { background: #eff6ff; border-color: #2563eb; }
+    .drop-zone p { margin: 0; font-size: 13px; color: #64748b; font-weight: 500; }
+    
     button { width: 100%; background: #2563eb; color: white; border: none; padding: 13px; font-size: 15px; font-weight: 600; border-radius: 10px; cursor: pointer; transition: background 0.2s, transform 0.1s; margin-top: 5px; }
     button:hover { background: #1d4ed8; }
     button:active { transform: scale(0.99); }
-    .code-display { font-size: 34px; font-weight: 800; letter-spacing: 6px; color: #2563eb; margin: 15px 0; font-family: monospace; }
+    .code-display { font-size: 34px; font-weight: 800; letter-spacing: 6px; color: #2563eb; margin: 10px 0 5px 0; font-family: monospace; }
     .hidden { display: none; }
     .divider { margin: 24px 0; border-top: 1px solid #e2e8f0; position: relative; }
     .divider span { position: absolute; top: -10px; background: white; padding: 0 12px; left: 50%; transform: translateX(-50%); color: #94a3b8; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; }
     #qrcode img { margin: 15px auto; display: block; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
-    .url-hint { font-size: 12px; color: #64748b; word-break: break-all; margin-top: 5px; }
+    .url-hint { font-size: 12px; color: #64748b; word-break: break-all; margin-top: 5px; display: flex; align-items: center; justify-content: center; gap: 8px; }
     
-    .file-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; text-align: left; display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #334155; }
-    .download-btn { background: #059669; text-decoration: none; color: white; padding: 6px 12px; border-radius: 6px; font-weight: 600; font-size: 12px; display: inline-block; }
+    /* Gestione Anteprima e Lista File */
+    .file-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; text-align: left; display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #334155; gap: 10px; }
+    .file-preview { width: 48px; height: 48px; border-radius: 6px; object-fit: cover; border: 1px solid #cbd5e1; background: #e2e8f0; flex-shrink: 0; }
+    .file-info { flex-grow: 1; overflow: hidden; text-overflow: ellipsis; }
+    .download-btn { background: #059669; text-decoration: none; color: white; padding: 8px 12px; border-radius: 6px; font-weight: 600; font-size: 12px; display: inline-block; white-space: nowrap; border: none; cursor: pointer; }
+    .download-all-btn { background: #0284c7; color: white; border: none; padding: 10px; font-size: 13px; font-weight: 600; border-radius: 8px; cursor: pointer; margin-bottom: 12px; width: 100%; }
     
+    /* Countdown Timer */
+    .timer-badge { display: inline-block; background: #fef3c7; color: #92400e; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 20px; margin-bottom: 10px; }
+
     .privacy-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin-top: 25px; text-align: left; font-size: 12px; color: #475569; line-height: 1.5; }
     .privacy-card h3 { margin-top: 0; font-size: 13px; color: #0f172a; display: flex; align-items: center; gap: 6px; font-weight: 700; }
     .privacy-card ul { padding-left: 18px; margin: 8px 0; }
     .privacy-card li { margin-bottom: 6px; }
     .disclaimer { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 10px; border-radius: 8px; margin-top: 12px; font-size: 11px; }
+    
+    .btn-secondary { background: #e2e8f0; color: #334155; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; border: none; cursor: pointer; margin-left: 5px; }
+    .btn-secondary:hover { background: #cbd5e1; }
   </style>
 </head>
 <body>
@@ -87,20 +103,28 @@ app.get('/', (req, res) => {
     <div id="send-section">
       <textarea id="text-input" placeholder="Incolla qui testo, link o note..."></textarea>
       
-      <div style="text-align: left; margin-bottom: 10px;">
+      <div style="text-align: left; margin-bottom: 5px;">
         <label style="font-size: 12px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Seleziona Foto / File (Multipli):</label>
-        <!-- multiple permette la selezione di più file contemporaneamente -->
-        <input type="file" id="file-input" multiple style="margin-top: 6px;" />
+      </div>
+
+      <!-- Area Drag & Drop -->
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <p id="drop-zone-text">📁 Trascina qui i tuoi file oppure <span style="color: #2563eb; text-decoration: underline;">sfoglia</span></p>
+        <input type="file" id="file-input" multiple style="display: none;" onchange="updateFileLabel()" />
       </div>
 
       <button onclick="createRoom()">Genera Codice di Trasferimento</button>
     </div>
 
     <div id="result-section" class="hidden">
+      <div id="countdown" class="timer-badge">⏱️ Scade tra: 05:00</div>
       <p style="margin-bottom: 5px; font-size: 14px; color: #475569;">Inserisci questo codice o inquadra il QR Code:</p>
       <div id="room-code" class="code-display">----</div>
       <div id="qrcode"></div>
-      <div id="direct-link" class="url-hint"></div>
+      <div class="url-hint">
+        <span id="direct-link-text"></span>
+        <button class="btn-secondary" onclick="copyLink()">📋 Copia Link</button>
+      </div>
       <p style="color: #059669; font-size: 14px; font-weight: 600; margin-top: 15px;" id="status-msg">In attesa del dispositivo ricevente...</p>
     </div>
 
@@ -116,11 +140,15 @@ app.get('/', (req, res) => {
       <!-- Sezione Testo Ricevuto -->
       <div id="received-text-box" class="hidden" style="margin-bottom: 15px;">
         <textarea id="received-text" readonly></textarea>
-        <button onclick="copyToClipboard()" style="background: #475569;">Copia negli appunti</button>
+        <div style="display: flex; gap: 8px;">
+          <button onclick="copyToClipboard()" style="background: #475569; flex: 1;">Copia negli appunti</button>
+          <a id="open-link-btn" href="#" target="_blank" class="hidden" style="background: #2563eb; color: white; text-decoration: none; padding: 13px; font-size: 15px; font-weight: 600; border-radius: 10px; text-align: center; flex: 1;">🔗 Apri Link</a>
+        </div>
       </div>
 
       <!-- Lista File Ricevuti -->
       <div id="received-files-box" class="hidden">
+        <button id="download-all-btn" class="download-all-btn" onclick="downloadAllFiles()">💾 Scarica Tutti i File</button>
         <div id="files-list"></div>
       </div>
     </div>
@@ -143,6 +171,9 @@ app.get('/', (req, res) => {
   <script>
     let ws;
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let generatedTargetUrl = '';
+    let countdownInterval = null;
+    let receivedFiles = [];
 
     window.onload = () => {
       const urlParams = new URLSearchParams(window.location.search);
@@ -151,7 +182,85 @@ app.get('/', (req, res) => {
         document.getElementById('code-input').value = codeParam;
         joinRoom();
       }
+      setupDragAndDrop();
     };
+
+    // Gestione Drag & Drop
+    function setupDragAndDrop() {
+      const dropZone = document.getElementById('drop-zone');
+
+      ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
+      });
+
+      function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+
+      ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, () => dropZone.classList.add('dragover'), false);
+      });
+
+      ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'), false);
+      });
+
+      dropZone.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        document.getElementById('file-input').files = files;
+        updateFileLabel();
+      });
+    }
+
+    function updateFileLabel() {
+      const input = document.getElementById('file-input');
+      const text = document.getElementById('drop-zone-text');
+      if (input.files.length > 0) {
+        text.innerHTML = `✅ <strong>${input.files.length} file</strong> selezionati`;
+      } else {
+        text.innerHTML = `📁 Trascina qui i tuoi file oppure <span style="color: #2563eb; text-decoration: underline;">sfoglia</span>`;
+      }
+    }
+
+    // Suono e Vibrazione di conferma
+    function triggerFeedback() {
+      if ('vibrate' in navigator) {
+        navigator.vibrate([100, 50, 100]);
+      }
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.frequency.value = 587.33; // Nota D5
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+      } catch (e) {
+        // AudioContext non supportato o bloccato dalle policy del browser
+      }
+    }
+
+    // Countdown 5 minuti
+    function startCountdown() {
+      let duration = 300;
+      const display = document.getElementById('countdown');
+      clearInterval(countdownInterval);
+      countdownInterval = setInterval(() => {
+        const minutes = Math.floor(duration / 60);
+        const seconds = duration % 60;
+        display.innerText = `⏱️ Scade tra: ${minutes < 10 ? '0' : ''}${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+        if (--duration < 0) {
+          clearInterval(countdownInterval);
+          display.innerText = '❌ Codice Scaduto';
+          display.style.background = '#fef2f2';
+          display.style.color = '#991b1b';
+        }
+      }, 1000);
+    }
 
     async function createRoom() {
       const text = document.getElementById('text-input').value.trim();
@@ -193,9 +302,13 @@ app.get('/', (req, res) => {
           document.getElementById('result-section').classList.remove('hidden');
           document.getElementById('room-code').innerText = data.code;
           document.getElementById('qrcode').innerHTML = '<img src="' + data.qr + '" width="180" height="180" />';
-          document.getElementById('direct-link').innerText = 'Link diretto: ' + data.targetUrl;
+          
+          generatedTargetUrl = data.targetUrl;
+          document.getElementById('direct-link-text').innerText = 'Link: ' + data.targetUrl.replace(/^https?:\/\//, '');
+          startCountdown();
         } else if (data.type === 'CONNECTED') {
           document.getElementById('status-msg').innerText = '✅ Dispositivo connesso! Trasferimento completato.';
+          triggerFeedback();
         }
       };
     }
@@ -212,19 +325,27 @@ app.get('/', (req, res) => {
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.type === 'PAYLOAD') {
+          triggerFeedback();
           document.getElementById('receive-section').classList.add('hidden');
           document.getElementById('received-content').classList.remove('hidden');
 
           const payload = data.payload;
 
-          // Gestione Testo
+          // Gestione Testo e Riconoscimento Link
           if (payload.text) {
             document.getElementById('received-text-box').classList.remove('hidden');
             document.getElementById('received-text').value = payload.text;
+
+            if (payload.text.startsWith('http://') || payload.text.startsWith('https://')) {
+              const openBtn = document.getElementById('open-link-btn');
+              openBtn.href = payload.text;
+              openBtn.classList.remove('hidden');
+            }
           }
 
-          // Gestione File Multipli
+          // Gestione File Multipli e Anteprime Media
           if (payload.files && payload.files.length > 0) {
+            receivedFiles = payload.files;
             const filesBox = document.getElementById('received-files-box');
             const filesList = document.getElementById('files-list');
             filesBox.classList.remove('hidden');
@@ -233,16 +354,26 @@ app.get('/', (req, res) => {
             payload.files.forEach((fileObj, index) => {
               const blob = base64ToBlob(fileObj.fileData, fileObj.fileType);
               const blobUrl = URL.createObjectURL(blob);
+              fileObj.blobUrl = blobUrl;
+
+              // Riconoscimento e creazione anteprima media (immagini/video)
+              let previewHtml = `<div class="file-preview" style="display:flex;align-items:center;justify-content:center;font-size:20px;">📄</div>`;
+              if (fileObj.fileType.startsWith('image/')) {
+                previewHtml = `<img src="${blobUrl}" class="file-preview" alt="preview" />`;
+              } else if (fileObj.fileType.startsWith('video/')) {
+                previewHtml = `<video src="${blobUrl}" class="file-preview"></video>`;
+              }
 
               const itemDiv = document.createElement('div');
               itemDiv.className = 'file-item';
               itemDiv.innerHTML = `
-                <div>
+                ${previewHtml}
+                <div class="file-info">
                   <strong>${fileObj.fileName}</strong><br>
                   <span style="color: #64748b; font-size: 11px;">${formatBytes(blob.size)}</span>
                   <div id="status-${index}" style="color: #059669; font-size: 11px; font-weight: bold; margin-top: 3px; display: none;">✅ Salvato nei download!</div>
                 </div>
-                <a href="${blobUrl}" download="${fileObj.fileName}" class="download-btn" onclick="handleDownload(this, 'status-${index}')">💾 Scarica</a>
+                <a href="${blobUrl}" download="${fileObj.fileName}" id="dl-btn-${index}" class="download-btn" onclick="handleDownload(this, 'status-${index}')">💾 Scarica</a>
               `;
               filesList.appendChild(itemDiv);
             });
@@ -253,15 +384,30 @@ app.get('/', (req, res) => {
       };
     }
 
+    // Scarica Tutti i file in sequenza
+    function downloadAllFiles() {
+      receivedFiles.forEach((fileObj, index) => {
+        setTimeout(() => {
+          const btn = document.getElementById(`dl-btn-${index}`);
+          if (btn) btn.click();
+        }, index * 400);
+      });
+    }
+
     function handleDownload(element, statusId) {
-      // Cambia visivamente il pulsante per dare feedback immediato
       element.innerText = '✅ Scaricato';
       element.style.background = '#0284c7';
       
-      // Mostra la scritta di conferma vicino al file
       const statusEl = document.getElementById(statusId);
       if (statusEl) {
         statusEl.style.display = 'block';
+      }
+    }
+
+    function copyLink() {
+      if (generatedTargetUrl) {
+        navigator.clipboard.writeText(generatedTargetUrl);
+        alert('Link copiato negli appunti!');
       }
     }
 
