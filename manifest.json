@@ -1,0 +1,16 @@
+{
+  "short_name": "QuickPaste",
+  "name": "QuickPaste Transfer",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/93/93634.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#f4f6f8",
+  "theme_color": "#2563eb",
+  "display": "standalone",
+  "orientation": "portrait"
+}

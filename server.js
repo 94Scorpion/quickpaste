@@ -14,12 +14,22 @@ const wss = new WebSocket.Server({ server, maxPayload: 50 * 1024 * 1024 });
 const rooms = new Map();
 
 app.use(express.json({ limit: '50mb' }));
+app.get('/manifest.json', (req, res) => {
+  res.sendFile(__dirname + '/manifest.json');
+});
 
 app.get('/', (req, res) => {
   res.send(`
 <!DOCTYPE html>
 <html lang="it">
 <head>
+<!-- Inserisci questi tag dentro il tag <head> </head> dell'HTML -->
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#2563eb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="QuickPaste">
+<link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/93/93634.png">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>QuickPaste - Trasferimento Originale RAW</title>
