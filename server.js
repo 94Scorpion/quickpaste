@@ -218,9 +218,9 @@ app.get('/', (req, res) => {
       const input = document.getElementById('file-input');
       const text = document.getElementById('drop-zone-text');
       if (input.files.length > 0) {
-        text.innerHTML = `✅ <strong>${input.files.length} file</strong> selezionati`;
+        text.innerHTML = '✅ <strong>' + input.files.length + ' file</strong> selezionati';
       } else {
-        text.innerHTML = `📁 Trascina qui i tuoi file oppure <span style="color: #2563eb; text-decoration: underline;">sfoglia</span>`;
+        text.innerHTML = '📁 Trascina qui i tuoi file oppure <span style="color: #2563eb; text-decoration: underline;">sfoglia</span>';
       }
     }
 
@@ -252,7 +252,9 @@ app.get('/', (req, res) => {
       countdownInterval = setInterval(() => {
         const minutes = Math.floor(duration / 60);
         const seconds = duration % 60;
-        display.innerText = `⏱️ Scade tra: ${minutes < 10 ? '0' : ''}${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+        const minStr = minutes < 10 ? '0' + minutes : minutes;
+        const secStr = seconds < 10 ? '0' + seconds : seconds;
+        display.innerText = '⏱️ Scade tra: ' + minStr + ':' + secStr;
         if (--duration < 0) {
           clearInterval(countdownInterval);
           display.innerText = '❌ Codice Scaduto';
@@ -304,7 +306,7 @@ app.get('/', (req, res) => {
           document.getElementById('qrcode').innerHTML = '<img src="' + data.qr + '" width="180" height="180" />';
           
           generatedTargetUrl = data.targetUrl;
-          document.getElementById('direct-link-text').innerText = 'Link: ' + data.targetUrl.replace(/^https?:\/\//, '');
+          document.getElementById('direct-link-text').innerText = 'Link: ' + data.targetUrl.replace(/^https?:\\/\\//, '');
           startCountdown();
         } else if (data.type === 'CONNECTED') {
           document.getElementById('status-msg').innerText = '✅ Dispositivo connesso! Trasferimento completato.';
@@ -357,24 +359,23 @@ app.get('/', (req, res) => {
               fileObj.blobUrl = blobUrl;
 
               // Riconoscimento e creazione anteprima media (immagini/video)
-              let previewHtml = `<div class="file-preview" style="display:flex;align-items:center;justify-content:center;font-size:20px;">📄</div>`;
+              let previewHtml = '<div class="file-preview" style="display:flex;align-items:center;justify-content:center;font-size:20px;">📄</div>';
               if (fileObj.fileType.startsWith('image/')) {
-                previewHtml = `<img src="${blobUrl}" class="file-preview" alt="preview" />`;
+                previewHtml = '<img src="' + blobUrl + '" class="file-preview" alt="preview" />';
               } else if (fileObj.fileType.startsWith('video/')) {
-                previewHtml = `<video src="${blobUrl}" class="file-preview"></video>`;
+                previewHtml = '<video src="' + blobUrl + '" class="file-preview"></video>';
               }
 
               const itemDiv = document.createElement('div');
               itemDiv.className = 'file-item';
-              itemDiv.innerHTML = `
-                ${previewHtml}
-                <div class="file-info">
-                  <strong>${fileObj.fileName}</strong><br>
-                  <span style="color: #64748b; font-size: 11px;">${formatBytes(blob.size)}</span>
-                  <div id="status-${index}" style="color: #059669; font-size: 11px; font-weight: bold; margin-top: 3px; display: none;">✅ Salvato nei download!</div>
-                </div>
-                <a href="${blobUrl}" download="${fileObj.fileName}" id="dl-btn-${index}" class="download-btn" onclick="handleDownload(this, 'status-${index}')">💾 Scarica</a>
-              `;
+              itemDiv.innerHTML = previewHtml +
+                '<div class="file-info">' +
+                  '<strong>' + fileObj.fileName + '</strong><br>' +
+                  '<span style="color: #64748b; font-size: 11px;">' + formatBytes(blob.size) + '</span>' +
+                  '<div id="status-' + index + '" style="color: #059669; font-size: 11px; font-weight: bold; margin-top: 3px; display: none;">✅ Salvato nei download!</div>' +
+                '</div>' +
+                '<a href="' + blobUrl + '" download="' + fileObj.fileName + '" id="dl-btn-' + index + '" class="download-btn" onclick="handleDownload(this, \'status-' + index + '\')">💾 Scarica</a>';
+              
               filesList.appendChild(itemDiv);
             });
           }
@@ -388,7 +389,7 @@ app.get('/', (req, res) => {
     function downloadAllFiles() {
       receivedFiles.forEach((fileObj, index) => {
         setTimeout(() => {
-          const btn = document.getElementById(`dl-btn-${index}`);
+          const btn = document.getElementById('dl-btn-' + index);
           if (btn) btn.click();
         }, index * 400);
       });
@@ -496,12 +497,12 @@ wss.on('connection', (ws, req) => {
     }
   });
 
-  ws.on('close', () => {
+  ws.onclose = () => {
     if (currentRoom && rooms.has(currentRoom)) {
       clearTimeout(rooms.get(currentRoom).timer);
       rooms.delete(currentRoom);
     }
-  });
+  };
 });
 
 server.listen(PORT, () => {
