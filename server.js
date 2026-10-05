@@ -168,319 +168,348 @@ app.get('/', (req, res) => {
   </div>
 
   <script>
-    let ws;
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let generatedTargetUrl = '';
-    let countdownInterval = null;
-    let receivedFiles = [];
-    let selectedFilesArray = []; // Memorizza i file sia da click che da Drag&Drop
+  let ws;
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  let generatedTargetUrl = '';
+  let countdownInterval = null;
+  let receivedFiles = [];
+  let selectedFilesArray = [];
 
-    window.onload = () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const codeParam = urlParams.get('code');
-      if (codeParam) {
-        document.getElementById('code-input').value = codeParam;
-        joinRoom();
+  // Cattura QUALSIASI errore JS non gestito
+  window.addEventListener('error', (e) => {
+    alert('ERRORE JS: ' + e.message + '\nFile: ' + e.filename + '\nLinea: ' + e.lineno);
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    alert('PROMISE REJECTED: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+  });
+
+  window.onload = () => {
+    console.log('[INIT] window.onload');
+    const urlParams = new URLSearchParams(window.location.search);
+    const codeParam = urlParams.get('code');
+    if (codeParam) {
+      document.getElementById('code-input').value = codeParam;
+      joinRoom();
+    }
+    setupDragAndDropGlobal();
+  };
+
+  function setupDragAndDropGlobal() {
+    console.log('[INIT] setupDragAndDropGlobal');
+    const dropZone = document.getElementById('drop-zone');
+
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      window.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }, false);
+    });
+
+    dropZone.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropZone.classList.add('dragover');
+    });
+
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropZone.classList.add('dragover');
+    });
+
+    dropZone.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropZone.classList.remove('dragover');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      console.log('[DROP] file trascinati:', e.dataTransfer ? e.dataTransfer.files.length : 0);
+      e.preventDefault();
+      e.stopPropagation();
+      dropZone.classList.remove('dragover');
+
+      if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+        selectedFilesArray = Array.from(e.dataTransfer.files);
+        console.log('[DROP] selectedFilesArray.length =', selectedFilesArray.length);
+        updateFileLabelText(selectedFilesArray.length);
       }
-      setupDragAndDropGlobal();
+    });
+  }
+
+  function updateFileLabel() {
+    const input = document.getElementById('file-input');
+    console.log('[INPUT] file selezionati:', input.files.length);
+    if (input.files.length > 0) {
+      selectedFilesArray = Array.from(input.files);
+      console.log('[INPUT] selectedFilesArray.length =', selectedFilesArray.length);
+      updateFileLabelText(selectedFilesArray.length);
+    } else {
+      selectedFilesArray = [];
+      updateFileLabelText(0);
+    }
+  }
+
+  function updateFileLabelText(count) {
+    const text = document.getElementById('drop-zone-text');
+    if (count > 0) {
+      text.innerHTML = '✅ <strong>' + count + ' file</strong> selezionati';
+    } else {
+      text.innerHTML = '📁 Trascina qui i tuoi file oppure <span style="color: #2563eb; text-decoration: underline;">sfoglia</span>';
+    }
+  }
+
+  function triggerFeedback() {
+    if ('vibrate' in navigator) {
+      navigator.vibrate([100, 50, 100]);
+    }
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.frequency.value = 587.33;
+      gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.15);
+    } catch (e) {}
+  }
+
+  function startCountdown() {
+    let duration = 300;
+    const display = document.getElementById('countdown');
+    clearInterval(countdownInterval);
+    countdownInterval = setInterval(() => {
+      const minutes = Math.floor(duration / 60);
+      const seconds = duration % 60;
+      const minStr = minutes < 10 ? '0' + minutes : minutes;
+      const secStr = seconds < 10 ? '0' + seconds : seconds;
+      display.innerText = '⏱️ Scade tra: ' + minStr + ':' + secStr;
+      if (--duration < 0) {
+        clearInterval(countdownInterval);
+        display.innerText = '❌ Codice Scaduto';
+        display.style.background = '#fef2f2';
+        display.style.color = '#991b1b';
+      }
+    }, 1000);
+  }
+
+  async function createRoom() {
+    console.log('[CREATE] avviato. Testo:', document.getElementById('text-input').value.trim().length, 'File:', selectedFilesArray.length);
+
+    const text = document.getElementById('text-input').value.trim();
+
+    if (!text && selectedFilesArray.length === 0) {
+      return alert('Inserisci del testo oppure seleziona almeno un file/foto!');
+    }
+
+    let payloadData = {
+      text: text || null,
+      files: []
     };
 
-    // Blocco completo dell'apertura file su tutto il browser
-    function setupDragAndDropGlobal() {
-      const dropZone = document.getElementById('drop-zone');
-
-      // Blocca il comportamento di default su tutto il window per drag&drop
-      ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-        window.addEventListener(eventName, (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-        }, false);
-      });
-
-      dropZone.addEventListener('dragenter', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dropZone.classList.add('dragover');
-      });
-
-      dropZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dropZone.classList.add('dragover');
-      });
-
-      dropZone.addEventListener('dragleave', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dropZone.classList.remove('dragover');
-      });
-
-      dropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dropZone.classList.remove('dragover');
-
-        if (e.dataTransfer && e.dataTransfer.files.length > 0) {
-          selectedFilesArray = Array.from(e.dataTransfer.files);
-          updateFileLabelText(selectedFilesArray.length);
+    try {
+      if (selectedFilesArray.length > 0) {
+        for (let i = 0; i < selectedFilesArray.length; i++) {
+          const file = selectedFilesArray[i];
+          console.log('[CREATE] leggo file', i, file.name, file.size, 'bytes');
+          const arrayBuffer = await file.arrayBuffer();
+          console.log('[CREATE] arrayBuffer pronto per', file.name);
+          const base64 = arrayBufferToBase64(arrayBuffer);
+          console.log('[CREATE] base64 pronto per', file.name, 'lunghezza:', base64.length);
+          payloadData.files.push({
+            fileName: file.name,
+            fileType: file.type || 'application/octet-stream',
+            fileSize: file.size,
+            fileData: base64
+          });
         }
-      });
+      }
+    } catch (err) {
+      console.error('[CREATE] ERRORE lettura file:', err);
+      return alert('Errore nella lettura dei file: ' + err.message);
     }
 
-    function updateFileLabel() {
-      const input = document.getElementById('file-input');
-      if (input.files.length > 0) {
-        selectedFilesArray = Array.from(input.files);
-        updateFileLabelText(selectedFilesArray.length);
-      } else {
-        selectedFilesArray = [];
-        updateFileLabelText(0);
-      }
+    console.log('[CREATE] payload pronto. Dimensione stimata JSON:', JSON.stringify(payloadData).length, 'caratteri');
+
+    try {
+      ws = new WebSocket(protocol + '//' + location.host);
+    } catch (e) {
+      console.error('[CREATE] errore creazione WebSocket:', e);
+      return alert('Errore creazione WebSocket: ' + e.message);
     }
 
-    function updateFileLabelText(count) {
-      const text = document.getElementById('drop-zone-text');
-      if (count > 0) {
-        text.innerHTML = '✅ <strong>' + count + ' file</strong> selezionati';
-      } else {
-        text.innerHTML = '📁 Trascina qui i tuoi file oppure <span style="color: #2563eb; text-decoration: underline;">sfoglia</span>';
-      }
-    }
-
-    // Suono e Vibrazione di conferma
-    function triggerFeedback() {
-      if ('vibrate' in navigator) {
-        navigator.vibrate([100, 50, 100]);
-      }
+    ws.onopen = () => {
+      console.log('[WS] onopen');
       try {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.frequency.value = 587.33; // Nota D5
-        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-        osc.start();
-        osc.stop(audioCtx.currentTime + 0.15);
+        const msg = JSON.stringify({ type: 'CREATE', payload: payloadData });
+        console.log('[WS] invio messaggio, lunghezza:', msg.length);
+        ws.send(msg);
+        console.log('[WS] messaggio inviato');
       } catch (e) {
-        // AudioContext non supportato o bloccato
+        console.error('[WS] errore send:', e);
+        alert('Errore invio: ' + e.message);
       }
-    }
+    };
 
-    // Countdown 5 minuti
-    function startCountdown() {
-      let duration = 300;
-      const display = document.getElementById('countdown');
-      clearInterval(countdownInterval);
-      countdownInterval = setInterval(() => {
-        const minutes = Math.floor(duration / 60);
-        const seconds = duration % 60;
-        const minStr = minutes < 10 ? '0' + minutes : minutes;
-        const secStr = seconds < 10 ? '0' + seconds : seconds;
-        display.innerText = '⏱️ Scade tra: ' + minStr + ':' + secStr;
-        if (--duration < 0) {
-          clearInterval(countdownInterval);
-          display.innerText = '❌ Codice Scaduto';
-          display.style.background = '#fef2f2';
-          display.style.color = '#991b1b';
-        }
-      }, 1000);
-    }
-
-    async function createRoom() {
-      const text = document.getElementById('text-input').value.trim();
-
-      if (!text && selectedFilesArray.length === 0) {
-        return alert('Inserisci del testo oppure seleziona almeno un file/foto!');
+    ws.onmessage = (event) => {
+      console.log('[WS] onmessage ricevuto:', event.data.substring(0, 200));
+      const data = JSON.parse(event.data);
+      if (data.type === 'CREATED') {
+        document.getElementById('send-section').classList.add('hidden');
+        document.getElementById('result-section').classList.remove('hidden');
+        document.getElementById('room-code').innerText = data.code;
+        document.getElementById('qrcode').innerHTML = '<img src="' + data.qr + '" width="180" height="180" />';
+        generatedTargetUrl = data.targetUrl;
+        document.getElementById('direct-link-text').innerText = 'Link: ' + data.targetUrl.replace(/^https?:\/\//, '');
+        startCountdown();
+      } else if (data.type === 'CONNECTED') {
+        document.getElementById('status-msg').innerText = '✅ Dispositivo connesso! Trasferimento completato.';
+        triggerFeedback();
       }
+    };
 
-      let payloadData = {
-        text: text || null,
-        files: []
-      };
+    ws.onerror = (err) => {
+      console.error('[WS] onerror:', err);
+      alert('Errore WebSocket. Controlla la console.');
+    };
 
-      try {
-        if (selectedFilesArray.length > 0) {
-          for (let i = 0; i < selectedFilesArray.length; i++) {
-            const file = selectedFilesArray[i];
-            const arrayBuffer = await file.arrayBuffer();
-            const base64 = arrayBufferToBase64(arrayBuffer);
-            payloadData.files.push({
-              fileName: file.name,
-              fileType: file.type || 'application/octet-stream',
-              fileSize: file.size,
-              fileData: base64
-            });
+    ws.onclose = (e) => {
+      console.log('[WS] onclose. Code:', e.code, 'Reason:', e.reason, 'WasClean:', e.wasClean);
+      if (e.code === 1009) {
+        alert('Payload troppo grande! Il server ha rifiutato il messaggio. Riduci i file.');
+      }
+    };
+  }
+
+  function joinRoom() {
+    const code = document.getElementById('code-input').value.trim();
+    if (code.length !== 4) return alert('Inserisci un codice valido di 4 cifre.');
+
+    ws = new WebSocket(protocol + '//' + location.host);
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: 'JOIN', code: code }));
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'PAYLOAD') {
+        triggerFeedback();
+        document.getElementById('receive-section').classList.add('hidden');
+        document.getElementById('received-content').classList.remove('hidden');
+
+        const payload = data.payload;
+
+        if (payload.text) {
+          document.getElementById('received-text-box').classList.remove('hidden');
+          document.getElementById('received-text').value = payload.text;
+
+          if (payload.text.startsWith('http://') || payload.text.startsWith('https://')) {
+            const openBtn = document.getElementById('open-link-btn');
+            openBtn.href = payload.text;
+            openBtn.classList.remove('hidden');
           }
         }
-      } catch (err) {
-        console.error('Errore nella lettura dei file:', err);
-        return alert('Errore nella lettura dei file: ' + err.message);
-      }
 
-      ws = new WebSocket(protocol + '//' + location.host);
+        if (payload.files && payload.files.length > 0) {
+          receivedFiles = payload.files;
+          const filesBox = document.getElementById('received-files-box');
+          const filesList = document.getElementById('files-list');
+          filesBox.classList.remove('hidden');
+          filesList.innerHTML = '';
 
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.type === 'CREATED') {
-          document.getElementById('send-section').classList.add('hidden');
-          document.getElementById('result-section').classList.remove('hidden');
-          document.getElementById('room-code').innerText = data.code;
-          document.getElementById('qrcode').innerHTML = '<img src="' + data.qr + '" width="180" height="180" />';
-          
-          generatedTargetUrl = data.targetUrl;
-          document.getElementById('direct-link-text').innerText = 'Link: ' + data.targetUrl.replace(/^https?:\\/\\//, '');
-          startCountdown();
-        } else if (data.type === 'CONNECTED') {
-          document.getElementById('status-msg').innerText = '✅ Dispositivo connesso! Trasferimento completato.';
-          triggerFeedback();
-        }
-      };
+          payload.files.forEach((fileObj, index) => {
+            const blob = base64ToBlob(fileObj.fileData, fileObj.fileType);
+            const blobUrl = URL.createObjectURL(blob);
+            fileObj.blobUrl = blobUrl;
 
-      ws.onerror = (err) => {
-        console.error('WebSocket error:', err);
-        alert('Errore di connessione. Riprova.');
-      };
-
-      ws.onopen = () => {
-        ws.send(JSON.stringify({ type: 'CREATE', payload: payloadData }));
-      };
-    }
-
-    function joinRoom() {
-      const code = document.getElementById('code-input').value.trim();
-      if (code.length !== 4) return alert('Inserisci un codice valido di 4 cifre.');
-
-      ws = new WebSocket(protocol + '//' + location.host);
-      ws.onopen = () => {
-        ws.send(JSON.stringify({ type: 'JOIN', code: code }));
-      };
-
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.type === 'PAYLOAD') {
-          triggerFeedback();
-          document.getElementById('receive-section').classList.add('hidden');
-          document.getElementById('received-content').classList.remove('hidden');
-
-          const payload = data.payload;
-
-          // Gestione Testo e Riconoscimento Link
-          if (payload.text) {
-            document.getElementById('received-text-box').classList.remove('hidden');
-            document.getElementById('received-text').value = payload.text;
-
-            if (payload.text.startsWith('http://') || payload.text.startsWith('https://')) {
-              const openBtn = document.getElementById('open-link-btn');
-              openBtn.href = payload.text;
-              openBtn.classList.remove('hidden');
+            let previewHtml = '<div class="file-preview" style="display:flex;align-items:center;justify-content:center;font-size:20px;">📄</div>';
+            if (fileObj.fileType.startsWith('image/')) {
+              previewHtml = '<img src="' + blobUrl + '" class="file-preview" alt="preview" />';
+            } else if (fileObj.fileType.startsWith('video/')) {
+              previewHtml = '<video src="' + blobUrl + '" class="file-preview"></video>';
             }
-          }
 
-          // Gestione File Multipli e Anteprime Media
-          if (payload.files && payload.files.length > 0) {
-            receivedFiles = payload.files;
-            const filesBox = document.getElementById('received-files-box');
-            const filesList = document.getElementById('files-list');
-            filesBox.classList.remove('hidden');
-            filesList.innerHTML = '';
-
-            payload.files.forEach((fileObj, index) => {
-              const blob = base64ToBlob(fileObj.fileData, fileObj.fileType);
-              const blobUrl = URL.createObjectURL(blob);
-              fileObj.blobUrl = blobUrl;
-
-              // Riconoscimento e creazione anteprima media (immagini/video)
-              let previewHtml = '<div class="file-preview" style="display:flex;align-items:center;justify-content:center;font-size:20px;">📄</div>';
-              if (fileObj.fileType.startsWith('image/')) {
-                previewHtml = '<img src="' + blobUrl + '" class="file-preview" alt="preview" />';
-              } else if (fileObj.fileType.startsWith('video/')) {
-                previewHtml = '<video src="' + blobUrl + '" class="file-preview"></video>';
-              }
-
-              const itemDiv = document.createElement('div');
-              itemDiv.className = 'file-item';
-              itemDiv.innerHTML = previewHtml +
-                '<div class="file-info">' +
-                  '<strong>' + fileObj.fileName + '</strong><br>' +
-                  '<span style="color: #64748b; font-size: 11px;">' + formatBytes(blob.size) + '</span>' +
-                  '<div id="status-' + index + '" style="color: #059669; font-size: 11px; font-weight: bold; margin-top: 3px; display: none;">✅ Salvato nei download!</div>' +
-                '</div>' +
-                '<a href="' + blobUrl + '" download="' + fileObj.fileName + '" id="dl-btn-' + index + '" class="download-btn" onclick="handleDownload(this, \'status-' + index + '\')">💾 Scarica</a>';
-              
-              filesList.appendChild(itemDiv);
-            });
-          }
-        } else if (data.type === 'ERROR') {
-          alert(data.message);
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'file-item';
+            itemDiv.innerHTML = previewHtml +
+              '<div class="file-info">' +
+                '<strong>' + fileObj.fileName + '</strong><br>' +
+                '<span style="color: #64748b; font-size: 11px;">' + formatBytes(blob.size) + '</span>' +
+                '<div id="status-' + index + '" style="color: #059669; font-size: 11px; font-weight: bold; margin-top: 3px; display: none;">✅ Salvato nei download!</div>' +
+              '</div>' +
+              '<a href="' + blobUrl + '" download="' + fileObj.fileName + '" id="dl-btn-' + index + '" class="download-btn" onclick="handleDownload(this, \'status-' + index + '\')">💾 Scarica</a>';
+            
+            filesList.appendChild(itemDiv);
+          });
         }
-      };
-    }
-
-    // Scarica Tutti i file in sequenza
-    function downloadAllFiles() {
-      receivedFiles.forEach((fileObj, index) => {
-        setTimeout(() => {
-          const btn = document.getElementById('dl-btn-' + index);
-          if (btn) btn.click();
-        }, index * 400);
-      });
-    }
-
-    function handleDownload(element, statusId) {
-      element.innerText = '✅ Scaricato';
-      element.style.background = '#0284c7';
-      
-      const statusEl = document.getElementById(statusId);
-      if (statusEl) {
-        statusEl.style.display = 'block';
+      } else if (data.type === 'ERROR') {
+        alert(data.message);
       }
-    }
+    };
+  }
 
-    function copyLink() {
-      if (generatedTargetUrl) {
-        navigator.clipboard.writeText(generatedTargetUrl);
-        alert('Link copiato negli appunti!');
-      }
-    }
+  function downloadAllFiles() {
+    receivedFiles.forEach((fileObj, index) => {
+      setTimeout(() => {
+        const btn = document.getElementById('dl-btn-' + index);
+        if (btn) btn.click();
+      }, index * 400);
+    });
+  }
 
-    function arrayBufferToBase64(buffer) {
-      let binary = '';
-      const bytes = new Uint8Array(buffer);
-      const len = bytes.byteLength;
-      const chunkSize = 0x8000;
-      for (let i = 0; i < len; i += chunkSize) {
-        const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
-        binary += String.fromCharCode.apply(null, chunk);
-      }
-      return window.btoa(binary);
-    }
+  function handleDownload(element, statusId) {
+    element.innerText = '✅ Scaricato';
+    element.style.background = '#0284c7';
+    const statusEl = document.getElementById(statusId);
+    if (statusEl) statusEl.style.display = 'block';
+  }
 
-    function base64ToBlob(base64, type) {
-      const binaryString = window.atob(base64);
-      const len = binaryString.length;
-      const bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      return new Blob([bytes], { type: type });
+  function copyLink() {
+    if (generatedTargetUrl) {
+      navigator.clipboard.writeText(generatedTargetUrl);
+      alert('Link copiato negli appunti!');
     }
+  }
 
-    function formatBytes(bytes) {
-      if (bytes === 0) return '0 Bytes';
-      const k = 1024;
-      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  function arrayBufferToBase64(buffer) {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    const chunkSize = 0x8000;
+    for (let i = 0; i < len; i += chunkSize) {
+      const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
+      binary += String.fromCharCode.apply(null, chunk);
     }
+    return window.btoa(binary);
+  }
 
-    function copyToClipboard() {
-      const copyText = document.getElementById('received-text');
-      copyText.select();
-      navigator.clipboard.writeText(copyText.value);
-      alert('Testo copiato negli appunti!');
+  function base64ToBlob(base64, type) {
+    const binaryString = window.atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
     }
-  </script>
+    return new Blob([bytes], { type: type });
+  }
+
+  function formatBytes(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  function copyToClipboard() {
+    const copyText = document.getElementById('received-text');
+    copyText.select();
+    navigator.clipboard.writeText(copyText.value);
+    alert('Testo copiato negli appunti!');
+  }
+</script>
 </body>
 </html>
   `);
