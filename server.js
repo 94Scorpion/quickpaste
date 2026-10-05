@@ -373,7 +373,7 @@ app.get('/', (req, res) => {
   <script>
   // ============================================================
   // NOTA IMPORTANTE: questo script è dentro un template literal di Node.
-  // Evitiamo regex con slash problematici.
+  // Evitiamo regex con slash problematici e apici singoli escapati.
   // ============================================================
 
   console.log('[SCRIPT] QuickPaste caricato correttamente');
@@ -387,10 +387,8 @@ app.get('/', (req, res) => {
   let cancelRequested = false;
   let waitingForCancel = false;
 
-  // Traccia blob URL delle anteprime per revocarli
   let previewBlobUrls = [];
 
-  // === Utility localStorage per token mittente ===
   function getStoredToken(code) {
     try {
       return localStorage.getItem('qp_token_' + code) || null;
@@ -429,7 +427,6 @@ app.get('/', (req, res) => {
     updateCharCounter();
   };
 
-  // === Utility: escape HTML ===
   function escapeHtml(str) {
     if (!str) return '';
     return String(str)
@@ -440,7 +437,6 @@ app.get('/', (req, res) => {
       .replace(/>/g, '&gt;');
   }
 
-  // === Contatore caratteri textarea ===
   function updateCharCounter() {
     const el = document.getElementById('text-input');
     const counter = document.getElementById('char-counter');
@@ -519,12 +515,10 @@ app.get('/', (req, res) => {
     }
   }
 
-  // === Anteprima file selezionati con possibilità di rimozione ===
   function renderSelectedFiles() {
     const container = document.getElementById('selected-files-preview');
     if (!container) return;
 
-    // Revoca vecchi blob URL per evitare memory leak
     previewBlobUrls.forEach(function(url) {
       try { URL.revokeObjectURL(url); } catch (e) {}
     });
@@ -626,7 +620,6 @@ app.get('/', (req, res) => {
     }, 1000);
   }
 
-  // === Funzioni overlay di caricamento ===
   function showLoading(text, subtext, percent) {
     document.getElementById('loading-text').innerText = text || 'Attendere...';
     document.getElementById('loading-subtext').innerText = subtext || '';
@@ -669,7 +662,6 @@ app.get('/', (req, res) => {
     updateLoading('Annullato', '', 0);
   }
 
-  // === Reset completo (Nuovo trasferimento) ===
   function resetApp() {
     console.log('[RESET] nuovo trasferimento');
     try {
@@ -709,7 +701,6 @@ app.get('/', (req, res) => {
     updateCharCounter();
   }
 
-  // === Log notifiche download (lato mittente) ===
   function appendDownloadLog(fileName) {
     const log = document.getElementById('download-log');
     if (!log) return;
@@ -888,7 +879,6 @@ app.get('/', (req, res) => {
     };
   }
 
-  // === Annulla trasferimento già generato ===
   function cancelTransfer() {
     if (waitingForCancel) return;
 
@@ -910,11 +900,10 @@ app.get('/', (req, res) => {
       console.log('[CANCEL] inviato al server');
     } catch (e) {
       waitingForCancel = false;
-      alert('Errore nell\'invio della richiesta di annullamento: ' + e.message);
+      alert("Errore nell'invio della richiesta di annullamento: " + e.message);
     }
   }
 
-  // === Riconnessione come mittente originale ===
   function reconnectAsSender(code, token) {
     console.log('[RECONNECT] tentativo per codice', code);
 
@@ -1365,7 +1354,6 @@ wss.on('connection', (ws, req) => {
         }
       }
 
-      // === Annulla trasferimento: solo il mittente connesso può farlo ===
       else if (data.type === 'CANCEL') {
         if (currentRole !== 'sender' || !currentRoom) {
           ws.send(JSON.stringify({ type: 'CANCEL_FAILED' }));
@@ -1377,10 +1365,8 @@ wss.on('connection', (ws, req) => {
           return;
         }
 
-        // Ferma il timer di scadenza
         clearTimeout(room.timer);
 
-        // Avvisa il destinatario se è ancora connesso (probabilmente ha già scaricato, ma per pulizia)
         if (room.receiverWs && room.receiverWs.readyState === WebSocket.OPEN) {
           try {
             room.receiverWs.send(JSON.stringify({
@@ -1390,14 +1376,11 @@ wss.on('connection', (ws, req) => {
           } catch (e) {}
         }
 
-        // Rimuove definitivamente la room dalla memoria
         rooms.delete(currentRoom);
         console.log('[CANCEL] room ' + currentRoom + ' cancellata dal mittente');
 
-        // Conferma al mittente
         ws.send(JSON.stringify({ type: 'CANCELLED' }));
 
-        // Il mittente ha finito la sua sessione: azzera riferimento locale
         currentRoom = null;
         currentRole = null;
       }
