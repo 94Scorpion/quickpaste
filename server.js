@@ -2,20 +2,22 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const QRCode = require('qrcode');
+const path = require('path');
 
 const PORT = process.env.PORT || 3000;
 
 const app = express();
 const server = http.createServer(app);
 
-// Limite a 50MB per gestire immagini ad alta risoluzione senza problemi
+// Limite a 50MB per gestire immagini ad alta risoluzione
 const wss = new WebSocket.Server({ server, maxPayload: 50 * 1024 * 1024 });
 
 const rooms = new Map();
 
 app.use(express.json({ limit: '50mb' }));
+
 app.get('/manifest.json', (req, res) => {
-  res.sendFile(__dirname + '/manifest.json');
+  res.sendFile(path.join(__dirname, 'manifest.json'));
 });
 
 app.get('/', (req, res) => {
@@ -23,20 +25,19 @@ app.get('/', (req, res) => {
 <!DOCTYPE html>
 <html lang="it">
 <head>
-<!-- Inserisci questi tag dentro il tag <head> </head> dell'HTML -->
-<link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#2563eb">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="QuickPaste">
-<link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/93/93634.png">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QuickPaste - Trasferimento Originale RAW</title>
+  <title>QuickPaste - Trasferimento Sicuro & Privato</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="QuickPaste">
+  <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/93/93634.png">
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; background: #f4f6f8; margin: 0; padding: 20px; display: flex; justify-content: center; }
-    .card { background: white; max-width: 500px; width: 100%; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); text-align: center; }
-    h1 { margin-top: 0; color: #111827; }
+    .card { background: white; max-width: 520px; width: 100%; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); text-align: center; }
+    h1 { margin-top: 0; color: #111827; font-size: 24px; }
     textarea { width: 100%; height: 100px; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box; font-size: 15px; margin-bottom: 12px; resize: vertical; }
     input[type="text"] { width: 100%; padding: 12px; font-size: 18px; text-align: center; border: 1px solid #d1d5db; border-radius: 8px; box-sizing: border-box; letter-spacing: 4px; margin-bottom: 15px; }
     input[type="file"] { margin-bottom: 15px; width: 100%; font-size: 14px; }
@@ -50,12 +51,19 @@ app.get('/', (req, res) => {
     .url-hint { font-size: 12px; color: #6b7280; word-break: break-all; margin-top: 5px; }
     .download-btn { background: #059669; text-decoration: none; color: white; display: block; padding: 14px; border-radius: 8px; font-weight: 700; margin-top: 15px; font-size: 16px; }
     .info-box { background: #f3f4f6; border-radius: 8px; padding: 12px; margin-top: 10px; text-align: left; font-size: 13px; color: #374151; }
+    
+    /* Stili Sezione Privacy e Note Legali */
+    .privacy-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-top: 25px; text-align: left; font-size: 12px; color: #475569; line-height: 1.5; }
+    .privacy-card h3 { margin-top: 0; font-size: 14px; color: #1e293b; display: flex; align-items: center; gap: 6px; }
+    .privacy-card ul { padding-left: 18px; margin: 8px 0; }
+    .privacy-card li { margin-bottom: 6px; }
+    .disclaimer { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 10px; border-radius: 6px; margin-top: 10px; font-weight: 500; }
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>🚀 QuickPaste File Transfer</h1>
-    <p style="color: #6b7280; font-size: 14px;">Trasferimento diretto di file e foto originali.</p>
+    <h1>🚀 QuickPaste Transfer</h1>
+    <p style="color: #6b7280; font-size: 14px; margin-top: -8px;">Trasferimento diretto, temporaneo e in alta qualità.</p>
 
     <!-- INVIA -->
     <div id="send-section">
@@ -96,6 +104,20 @@ app.get('/', (req, res) => {
         <a id="download-link" class="download-btn" download>💾 Scarica File Originale</a>
       </div>
     </div>
+
+    <!-- SEZIONE PRIVACY E DISCLAIMER -->
+    <div class="privacy-card">
+      <h3>🔒 Privacy e Sicurezza dei Dati</h3>
+      <ul>
+        <li><strong>Nessun salvataggio:</strong> I file e i testi inviati non vengono salvati su disco o database. Risiedono temporaneamente nella memoria volatile (RAM) e vengono <strong>eliminati istantaneamente</strong> non appena completato il download o scadtuti i 5 minuti.</li>
+        <li><strong>Accesso Riservato:</strong> I dati sono raggiungibili <strong>esclusivamente</strong> da chi possiede il PIN univoco a 4 cifre o scansiona il QR Code generato. Nessun altro utente o sistema esterno può consultarli.</li>
+        <li><strong>Condivisione responsabile:</strong> Presta attenzione a chi fornisci il codice o il link di trasferimento.</li>
+      </ul>
+      <div class="disclaimer">
+        ⚠️ <strong>Note di Responsabilità:</strong> Il servizio viene fornito "così com'è". L'utente si assume la piena responsabilità di conservare e salvare i propri dati. Se il destinatario non effettua il download prima dell'eliminazione del file o dello scadere del timer, il contenuto andrà perso definitivamente.
+      </div>
+    </div>
+
   </div>
 
   <script>
@@ -243,7 +265,6 @@ app.get('/', (req, res) => {
 wss.on('connection', (ws, req) => {
   let currentRoom = null;
 
-  // Rileva in automatico l'URL del server (es. https://quickpaste.onrender.com)
   const host = req.headers.host;
   const protocol = req.headers['x-forwarded-proto'] || 'http';
   const currentPublicUrl = `${protocol}://${host}`;
