@@ -442,6 +442,8 @@ app.get('/', (req, res) => {
     document.getElementById('loading-text').innerText = text || 'Attendere...';
     document.getElementById('loading-subtext').innerText = subtext || '';
     document.getElementById('loading-progress-bar').style.width = (percent || 0) + '%';
+    // Il pulsante annulla è visibile di default (serve al mittente)
+    document.getElementById('cancel-loading-btn').classList.remove('hidden');
     document.getElementById('loading-overlay').classList.remove('hidden');
   }
 
@@ -458,7 +460,18 @@ app.get('/', (req, res) => {
     document.getElementById('loading-progress-bar').style.width = '0%';
   }
 
-  // === Annulla caricamento in corso ===
+  // === Overlay dedicato al ricevente (senza pulsante annulla) ===
+  function showReceiveLoading(text, subtext, percent) {
+    showLoading(text, subtext, percent);
+    // Nasconde il pulsante "Annulla" che non ha senso durante il recupero dati
+    document.getElementById('cancel-loading-btn').classList.add('hidden');
+  }
+
+  function hideReceiveLoading() {
+    hideLoading();
+  }
+
+  // === Annulla caricamento in corso (solo mittente) ===
   function cancelLoading() {
     console.log('[CANCEL] richiesto annullamento');
     cancelRequested = true;
@@ -613,7 +626,6 @@ app.get('/', (req, res) => {
         updateLoading('Completato!', 'Codice generato con successo.', 100);
         setTimeout(hideLoading, 300);
 
-        // === Copia automatica del codice negli appunti ===
         try {
           if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(data.code).catch(() => {});
@@ -663,80 +675,129 @@ app.get('/', (req, res) => {
     };
   }
 
+  // === Elaborazione del payload ricevuto (asincrona, con progresso) ===
+  async function processReceivedPayload(payload) {
+    updateLoading('Recupero file dalla memoria volatile...', 'Preparazione del contenuto...', 45);
+    await new Promise(r => setTimeout(r, 40));
+
+    // Testo
+    if (payload.text) {
+      document.getElementById('received-text-box').classList.remove('hidden');
+      document.getElementById('received-text').value = payload.text;
+
+      if (payload.text.startsWith('http://') || payload.text.startsWith('https://')) {
+        const openBtn = document.getElementById('open-link-btn');
+        openBtn.href = payload.text;
+        openBtn.classList.remove('hidden');
+      }
+    }
+
+    // File
+    if (payload.files && payload.files.length > 0) {
+      receivedFiles = payload.files;
+      const filesBox = document.getElementById('received-files-box');
+      const filesList = document.getElementById('files-list');
+      filesBox.classList.remove('hidden');
+      filesList.innerHTML = '';
+
+      const zipBtn = document.getElementById('download-zip-btn');
+      if (payload.files.length >= 2) {
+        zipBtn.classList.remove('hidden');
+      } else {
+        zipBtn.classList.add('hidden');
+      }
+
+      const total = payload.files.length;
+      for (let i = 0; i < total; i++) {
+        const fileObj = payload.files[i];
+        const pct = 50 + Math.round(((i + 1) / total) * 45);
+        updateLoading(
+          'Recupero file dalla memoria volatile...',
+          'Elaborazione file ' + (i + 1) + ' di ' + total + ': ' + fileObj.fileName,
+          pct
+        );
+        // Yield per permettere al browser di aggiornare la UI
+        await new Promise(r => setTimeout(r, 0));
+
+        const blob = base64ToBlob(fileObj.fileData, fileObj.fileType);
+        const blobUrl = URL.createObjectURL(blob);
+        fileObj.blobUrl = blobUrl;
+
+        const safeFileName = escapeHtml(fileObj.fileName);
+
+        let previewHtml = '<div class="file-preview" style="display:flex;align-items:center;justify-content:center;font-size:20px;">📄</div>';
+        if (fileObj.fileType.startsWith('image/')) {
+          previewHtml = '<img src="' + blobUrl + '" class="file-preview" alt="preview" />';
+        } else if (fileObj.fileType.startsWith('video/')) {
+          previewHtml = '<video src="' + blobUrl + '" class="file-preview"></video>';
+        }
+
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'file-item';
+        itemDiv.innerHTML = previewHtml +
+          '<div class="file-info">' +
+            '<strong>' + safeFileName + '</strong><br>' +
+            '<span style="color: #64748b; font-size: 11px;">' + formatBytes(blob.size) + '</span>' +
+            '<div id="status-' + i + '" style="color: #059669; font-size: 11px; font-weight: bold; margin-top: 3px; display: none;">✅ Salvato nei download!</div>' +
+          '</div>' +
+          '<a href="' + blobUrl + '" download="' + safeFileName + '" id="dl-btn-' + i + '" class="download-btn" onclick="handleDownload(this, &quot;status-' + i + '&quot;, &quot;' + safeFileName + '&quot;)">💾 Scarica</a>';
+        
+        filesList.appendChild(itemDiv);
+      }
+    }
+
+    updateLoading('Completato!', 'Contenuto pronto per il download.', 100);
+    await new Promise(r => setTimeout(r, 300));
+    hideReceiveLoading();
+    triggerFeedback();
+
+    document.getElementById('receive-section').classList.add('hidden');
+    document.getElementById('received-content').classList.remove('hidden');
+  }
+
   function joinRoom() {
     const code = document.getElementById('code-input').value.trim();
     if (code.length !== 4) return alert('Inserisci un codice valido di 4 cifre.');
 
+    // Mostra subito l'overlay al ricevente (senza pulsante annulla)
+    showReceiveLoading(
+      'Verifica del codice...',
+      'Controllo del codice ' + code + ' in corso...',
+      10
+    );
+
     ws = new WebSocket(protocol + '//' + location.host);
+
     ws.onopen = () => {
+      updateLoading('Connessione al server...', 'Recupero dati dalla memoria volatile...', 30);
       ws.send(JSON.stringify({ type: 'JOIN', code: code }));
     };
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'PAYLOAD') {
-        triggerFeedback();
-        document.getElementById('receive-section').classList.add('hidden');
-        document.getElementById('received-content').classList.remove('hidden');
-
-        const payload = data.payload;
-
-        if (payload.text) {
-          document.getElementById('received-text-box').classList.remove('hidden');
-          document.getElementById('received-text').value = payload.text;
-
-          if (payload.text.startsWith('http://') || payload.text.startsWith('https://')) {
-            const openBtn = document.getElementById('open-link-btn');
-            openBtn.href = payload.text;
-            openBtn.classList.remove('hidden');
-          }
-        }
-
-        if (payload.files && payload.files.length > 0) {
-          receivedFiles = payload.files;
-          const filesBox = document.getElementById('received-files-box');
-          const filesList = document.getElementById('files-list');
-          filesBox.classList.remove('hidden');
-          filesList.innerHTML = '';
-
-          // Mostra il pulsante ZIP solo se ci sono 2 o più file
-          const zipBtn = document.getElementById('download-zip-btn');
-          if (payload.files.length >= 2) {
-            zipBtn.classList.remove('hidden');
-          } else {
-            zipBtn.classList.add('hidden');
-          }
-
-          payload.files.forEach((fileObj, index) => {
-            const blob = base64ToBlob(fileObj.fileData, fileObj.fileType);
-            const blobUrl = URL.createObjectURL(blob);
-            fileObj.blobUrl = blobUrl;
-
-            const safeFileName = escapeHtml(fileObj.fileName);
-
-            let previewHtml = '<div class="file-preview" style="display:flex;align-items:center;justify-content:center;font-size:20px;">📄</div>';
-            if (fileObj.fileType.startsWith('image/')) {
-              previewHtml = '<img src="' + blobUrl + '" class="file-preview" alt="preview" />';
-            } else if (fileObj.fileType.startsWith('video/')) {
-              previewHtml = '<video src="' + blobUrl + '" class="file-preview"></video>';
-            }
-
-            const itemDiv = document.createElement('div');
-            itemDiv.className = 'file-item';
-            itemDiv.innerHTML = previewHtml +
-              '<div class="file-info">' +
-                '<strong>' + safeFileName + '</strong><br>' +
-                '<span style="color: #64748b; font-size: 11px;">' + formatBytes(blob.size) + '</span>' +
-                '<div id="status-' + index + '" style="color: #059669; font-size: 11px; font-weight: bold; margin-top: 3px; display: none;">✅ Salvato nei download!</div>' +
-              '</div>' +
-              '<a href="' + blobUrl + '" download="' + safeFileName + '" id="dl-btn-' + index + '" class="download-btn" onclick="handleDownload(this, &quot;status-' + index + '&quot;, &quot;' + safeFileName + '&quot;)">💾 Scarica</a>';
-            
-            filesList.appendChild(itemDiv);
-          });
-        }
+        // Avvia l'elaborazione asincrona (che aggiornerà la UI progressivamente)
+        processReceivedPayload(data.payload).catch(err => {
+          console.error('[RECEIVE] errore processing:', err);
+          hideReceiveLoading();
+          alert('Errore nel recupero del contenuto: ' + err.message);
+        });
       } else if (data.type === 'ERROR') {
+        hideReceiveLoading();
         alert(data.message);
       }
+    };
+
+    ws.onerror = (err) => {
+      console.error('[WS] errore ricezione:', err);
+      hideReceiveLoading();
+      alert('Errore di connessione al server.');
+    };
+
+    ws.onclose = (e) => {
+      // Se la connessione si chiude prima del completamento, nascondi l'overlay
+      console.log('[WS] ricevente onclose. Code:', e.code);
+      hideReceiveLoading();
     };
   }
 
@@ -778,8 +839,6 @@ app.get('/', (req, res) => {
       const zip = new JSZip();
 
       receivedFiles.forEach((fileObj) => {
-        // fileData è base64, JSZip lo accetta con l'opzione base64: true
-        // Usiamo un nome "unico" se ci sono duplicati
         zip.file(fileObj.fileName, fileObj.fileData, { base64: true });
       });
 
@@ -804,7 +863,6 @@ app.get('/', (req, res) => {
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 8000);
 
-      // Notifica il mittente che è stato scaricato uno ZIP
       notifyDownload('ZIP (' + receivedFiles.length + ' file)');
       triggerFeedback();
     } catch (err) {
@@ -821,7 +879,6 @@ app.get('/', (req, res) => {
     element.style.background = '#0284c7';
     const statusEl = document.getElementById(statusId);
     if (statusEl) statusEl.style.display = 'block';
-    // Notifica il mittente che il file è stato scaricato
     notifyDownload(fileName || null);
   }
 
