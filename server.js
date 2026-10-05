@@ -47,8 +47,9 @@ app.get('/', (req, res) => {
     
     .subtitle { color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 20px; }
     textarea { width: 100%; height: 95px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 10px; box-sizing: border-box; font-size: 14px; margin-bottom: 14px; resize: vertical; font-family: inherit; transition: border-color 0.2s; }
-    textarea:focus, input[type="text"]:focus { outline: none; border-color: #2563eb; }
+    textarea:focus, input[type="text"]:focus, select:focus { outline: none; border-color: #2563eb; }
     input[type="text"] { width: 100%; padding: 12px; font-size: 20px; text-align: center; border: 1px solid #cbd5e1; border-radius: 10px; box-sizing: border-box; letter-spacing: 6px; margin-bottom: 15px; font-weight: 600; font-family: monospace; }
+    select { width: 100%; padding: 12px; font-size: 14px; border: 1px solid #cbd5e1; border-radius: 10px; box-sizing: border-box; margin-bottom: 15px; background: #ffffff; color: #334155; font-family: inherit; cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; background-size: 16px; padding-right: 36px; transition: border-color 0.2s; }
     
     /* Area Drag & Drop */
     .drop-zone { border: 2px dashed #cbd5e1; border-radius: 10px; padding: 18px; text-align: center; background: #f8fafc; cursor: pointer; transition: background 0.2s, border-color 0.2s; margin-bottom: 15px; }
@@ -157,6 +158,21 @@ app.get('/', (req, res) => {
       </div>
       <input type="file" id="file-input" multiple style="display: none;" onchange="updateFileLabel()" />
 
+      <!-- Selettore tempo di scadenza -->
+      <div style="text-align: left; margin-bottom: 5px;">
+        <label style="font-size: 12px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Tempo di scadenza:</label>
+      </div>
+      <select id="expiry-select">
+        <option value="5" selected>5 minuti (predefinito)</option>
+        <option value="15">15 minuti</option>
+        <option value="30">30 minuti</option>
+        <option value="60">1 ora</option>
+        <option value="180">3 ore</option>
+        <option value="360">6 ore</option>
+        <option value="720">12 ore</option>
+        <option value="1440">24 ore</option>
+      </select>
+
       <button onclick="createRoom()">Genera Codice di Trasferimento</button>
     </div>
 
@@ -201,7 +217,7 @@ app.get('/', (req, res) => {
     <div class="privacy-card">
       <h3>🔒 Privacy e Sicurezza</h3>
       <ul>
-        <li><strong>Memoria volatile:</strong> Dati e file rimangono temporaneamente nella RAM e vengono <strong>distrutti subito</strong> dopo il download o allo scadere di 5 minuti.</li>
+        <li><strong>Memoria volatile:</strong> Dati e file rimangono temporaneamente nella RAM e vengono <strong>distrutti subito</strong> dopo il download o allo scadere del tempo scelto.</li>
         <li><strong>Protezione PIN:</strong> Il contenuto è accessibile solo a chi dispone del PIN di 4 cifre o scansiona il QR Code.</li>
         <li><strong>Nessun Tracciamento:</strong> Nessun file viene salvato su disco né associato al tuo profilo.</li>
       </ul>
@@ -326,22 +342,36 @@ app.get('/', (req, res) => {
     } catch (e) {}
   }
 
-  function startCountdown() {
-    let duration = 300;
+  // Formatta secondi totali in stringa HH:MM:SS o MM:SS
+  function formatDuration(totalSeconds) {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const pad = (n) => (n < 10 ? '0' + n : '' + n);
+    if (hours > 0) {
+      return pad(hours) + ':' + pad(minutes) + ':' + pad(seconds);
+    }
+    return pad(minutes) + ':' + pad(seconds);
+  }
+
+  // Countdown parametrico (secondi totali)
+  function startCountdown(totalSeconds) {
+    let duration = (typeof totalSeconds === 'number' && totalSeconds > 0) ? totalSeconds : 300;
     const display = document.getElementById('countdown');
+    // Reset aspetto in caso di riutilizzo
+    display.style.background = '#fef3c7';
+    display.style.color = '#92400e';
+    display.innerText = '⏱️ Scade tra: ' + formatDuration(duration);
     clearInterval(countdownInterval);
     countdownInterval = setInterval(() => {
-      const minutes = Math.floor(duration / 60);
-      const seconds = duration % 60;
-      const minStr = minutes < 10 ? '0' + minutes : minutes;
-      const secStr = seconds < 10 ? '0' + seconds : seconds;
-      display.innerText = '⏱️ Scade tra: ' + minStr + ':' + secStr;
       if (--duration < 0) {
         clearInterval(countdownInterval);
         display.innerText = '❌ Codice Scaduto';
         display.style.background = '#fef2f2';
         display.style.color = '#991b1b';
+        return;
       }
+      display.innerText = '⏱️ Scade tra: ' + formatDuration(duration);
     }, 1000);
   }
 
@@ -373,6 +403,9 @@ app.get('/', (req, res) => {
     if (!text && selectedFilesArray.length === 0) {
       return alert('Inserisci del testo oppure seleziona almeno un file/foto!');
     }
+
+    // Legge il tempo di scadenza selezionato (in minuti)
+    const expiryMinutes = parseInt(document.getElementById('expiry-select').value, 10) || 5;
 
     let payloadData = {
       text: text || null,
@@ -415,15 +448,15 @@ app.get('/', (req, res) => {
       return alert('Errore nella lettura dei file: ' + err.message);
     }
 
-    updateLoading('Upload...', 'Sto aprendo il canale di trasferimento.', 75);
+    updateLoading('Connessione...', 'Sto aprendo il canale di trasferimento.', 75);
 
     ws = new WebSocket(protocol + '//' + location.host);
 
     ws.onopen = () => {
       updateLoading('Invio in corso...', 'Trasferimento dei dati alla memoria volatile, attendere prego.', 88);
-      console.log('[WS] onopen, invio CREATE');
+      console.log('[WS] onopen, invio CREATE con scadenza', expiryMinutes, 'minuti');
       try {
-        ws.send(JSON.stringify({ type: 'CREATE', payload: payloadData }));
+        ws.send(JSON.stringify({ type: 'CREATE', payload: payloadData, expiryMinutes: expiryMinutes }));
       } catch (e) {
         console.error('[WS] errore send:', e);
         hideLoading();
@@ -450,7 +483,11 @@ app.get('/', (req, res) => {
         }
         document.getElementById('direct-link-text').innerText = 'Link: ' + displayUrl;
 
-        startCountdown();
+        // Usa la durata restituita dal server (in minuti) per il countdown
+        var serverExpiryMinutes = (typeof data.expiryMinutes === 'number' && data.expiryMinutes > 0)
+          ? data.expiryMinutes
+          : expiryMinutes;
+        startCountdown(serverExpiryMinutes * 60);
       } else if (data.type === 'CONNECTED') {
         document.getElementById('status-msg').innerText = '✅ Dispositivo connesso! Trasferimento completato.';
         triggerFeedback();
@@ -618,6 +655,12 @@ wss.on('connection', (ws, req) => {
 
       if (data.type === 'CREATE') {
         const code = Math.floor(1000 + Math.random() * 9000).toString();
+
+        // Legge la durata scelta (in minuti), default 5 minuti
+        const expiryMinutes = (typeof data.expiryMinutes === 'number' && data.expiryMinutes > 0)
+          ? data.expiryMinutes
+          : 5;
+        const expiryMs = expiryMinutes * 60 * 1000;
         
         const targetUrl = `${currentPublicUrl}?code=${code}`;
         const qrUrl = await QRCode.toDataURL(targetUrl);
@@ -625,11 +668,17 @@ wss.on('connection', (ws, req) => {
         rooms.set(code, {
           payload: data.payload,
           senderWs: ws,
-          timer: setTimeout(() => rooms.delete(code), 300000)
+          timer: setTimeout(() => rooms.delete(code), expiryMs)
         });
 
         currentRoom = code;
-        ws.send(JSON.stringify({ type: 'CREATED', code, qr: qrUrl, targetUrl }));
+        ws.send(JSON.stringify({
+          type: 'CREATED',
+          code,
+          qr: qrUrl,
+          targetUrl,
+          expiryMinutes: expiryMinutes
+        }));
       } 
       
       else if (data.type === 'JOIN') {
