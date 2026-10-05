@@ -171,6 +171,18 @@ app.get('/', (req, res) => {
     }
     #reconnect-banner.hidden { display: none; }
 
+    /* Banner modalità condivisione */
+    #sharing-mode-badge {
+      display: inline-block;
+      background: #ede9fe;
+      color: #6d28d9;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 20px;
+      margin-bottom: 8px;
+    }
+
     /* === Anteprima file selezionati (lato INVIA) === */
     #selected-files-preview {
       margin-bottom: 12px;
@@ -271,16 +283,13 @@ app.get('/', (req, res) => {
         <label style="font-size: 12px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Seleziona Foto / File (Multipli):</label>
       </div>
 
-      <!-- Area Drag & Drop e Input File -->
       <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
         <p id="drop-zone-text">📁 Trascina qui i tuoi file oppure <span style="color: #2563eb; text-decoration: underline;">sfoglia</span></p>
       </div>
       <input type="file" id="file-input" multiple style="display: none;" onchange="updateFileLabel()" />
 
-      <!-- Anteprima dei file selezionati con pulsante rimuovi -->
       <div id="selected-files-preview"></div>
 
-      <!-- Selettore tempo di scadenza -->
       <div style="text-align: left; margin-bottom: 5px;">
         <label style="font-size: 12px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Tempo di scadenza:</label>
       </div>
@@ -295,11 +304,20 @@ app.get('/', (req, res) => {
         <option value="1440">24 ore</option>
       </select>
 
+      <div style="text-align: left; margin-bottom: 5px;">
+        <label style="font-size: 12px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Modalità di condivisione:</label>
+      </div>
+      <select id="sharing-mode-select">
+        <option value="multi" selected>👥 Multipla — più persone possono scaricare</option>
+        <option value="single">👤 Singola — solo il primo che apre il codice</option>
+      </select>
+
       <button onclick="createRoom()">Genera Codice di Trasferimento</button>
     </div>
 
     <div id="result-section" class="hidden">
       <div id="reconnect-banner" class="hidden">🔄 Sessione ripristinata</div>
+      <div id="sharing-mode-badge" class="hidden">👥 Multipla</div>
       <div id="countdown" class="timer-badge">⏱️ Scade tra: 05:00</div>
       <p style="margin-bottom: 5px; font-size: 14px; color: #475569;">Inserisci questo codice o inquadra il QR Code:</p>
       <div id="room-code" class="code-display">----</div>
@@ -310,26 +328,20 @@ app.get('/', (req, res) => {
       </div>
       <p style="color: #059669; font-size: 14px; font-weight: 600; margin-top: 15px;" id="status-msg">In attesa del dispositivo ricevente...</p>
       
-      <!-- Log notifiche download ricevute dal mittente -->
       <div id="download-log"></div>
 
-      <!-- Annulla trasferimento -->
       <button id="cancel-transfer-btn" onclick="cancelTransfer()">🗑️ Annulla Trasferimento</button>
-
-      <!-- Pulsante nuovo trasferimento -->
       <button onclick="resetApp()" style="background: #64748b; margin-top: 8px;">↩️ Nuovo Trasferimento</button>
     </div>
 
     <div class="divider"><span>OPPURE RICEVI</span></div>
 
-    <!-- RICEVI -->
     <div id="receive-section">
       <input type="text" id="code-input" maxlength="4" placeholder="0000" />
       <button onclick="joinRoom()" style="background: #10b981;">Ricevi Contenuto</button>
     </div>
 
     <div id="received-content" class="hidden" style="margin-top: 20px;">
-      <!-- Sezione Testo Ricevuto -->
       <div id="received-text-box" class="hidden" style="margin-bottom: 15px;">
         <textarea id="received-text" readonly></textarea>
         <div style="display: flex; gap: 8px;">
@@ -338,7 +350,6 @@ app.get('/', (req, res) => {
         </div>
       </div>
 
-      <!-- Lista File Ricevuti -->
       <div id="received-files-box" class="hidden">
         <button id="download-zip-btn" class="download-zip-btn hidden" onclick="downloadAllAsZip()">📦 Scarica Tutti come ZIP</button>
         <button id="download-all-btn" class="download-all-btn" onclick="downloadAllFiles()">💾 Scarica Tutti i File</button>
@@ -346,11 +357,10 @@ app.get('/', (req, res) => {
       </div>
     </div>
 
-    <!-- PRIVACY E NOTE -->
     <div class="privacy-card">
       <h3>🔒 Privacy e Sicurezza</h3>
       <ul>
-        <li><strong>Memoria volatile:</strong> Dati e file rimangono temporaneamente nella RAM e vengono <strong>distrutti subito</strong> dopo il download o allo scadere del tempo scelto.</li>
+        <li><strong>Memoria volatile:</strong> Dati e file rimangono temporaneamente nella RAM e vengono <strong>distrutti subito</strong> dopo il download (in modalità Singola) o allo scadere del tempo scelto.</li>
         <li><strong>Protezione PIN:</strong> Il contenuto è accessibile solo a chi dispone del PIN di 4 cifre o scansiona il QR Code.</li>
         <li><strong>Nessun Tracciamento:</strong> Nessun file viene salvato su disco né associato al tuo profilo.</li>
       </ul>
@@ -361,7 +371,6 @@ app.get('/', (req, res) => {
 
   </div>
 
-  <!-- Overlay di caricamento -->
   <div id="loading-overlay" class="hidden">
     <div class="spinner"></div>
     <div id="loading-text">Preparazione in corso...</div>
@@ -372,8 +381,8 @@ app.get('/', (req, res) => {
 
   <script>
   // ============================================================
-  // NOTA IMPORTANTE: questo script è dentro un template literal di Node.
-  // Evitiamo regex con slash problematici e apici singoli escapati.
+  // NOTA: script dentro template literal Node. Evitiamo regex con
+  // slash problematici e apici singoli escapati.
   // ============================================================
 
   console.log('[SCRIPT] QuickPaste caricato correttamente');
@@ -682,6 +691,7 @@ app.get('/', (req, res) => {
     document.getElementById('send-section').classList.remove('hidden');
     document.getElementById('result-section').classList.add('hidden');
     document.getElementById('reconnect-banner').classList.add('hidden');
+    document.getElementById('sharing-mode-badge').classList.add('hidden');
 
     document.getElementById('text-input').value = '';
     document.getElementById('file-input').value = '';
@@ -701,17 +711,37 @@ app.get('/', (req, res) => {
     updateCharCounter();
   }
 
-  function appendDownloadLog(fileName) {
+  function appendDownloadLog(fileName, deviceId) {
     const log = document.getElementById('download-log');
     if (!log) return;
     const now = new Date();
     const pad = (n) => (n < 10 ? '0' + n : '' + n);
     const time = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+    let deviceLabel = '';
+    if (deviceId) {
+      deviceLabel = ' <span style="color: #2563eb; font-weight: 700;">[Dispositivo ' + deviceId + ']</span>';
+    }
     const entry = document.createElement('div');
     entry.className = 'dl-entry';
-    entry.innerHTML = '📥 <strong>' + time + '</strong> — ' + (fileName ? 'Scaricato: <em>' + escapeHtml(fileName) + '</em>' : 'Un file scaricato');
+    entry.innerHTML = '📥 <strong>' + time + '</strong>' + deviceLabel + ' — ' + (fileName ? 'Scaricato: <em>' + escapeHtml(fileName) + '</em>' : 'Un file scaricato');
     log.appendChild(entry);
     log.scrollTop = log.scrollHeight;
+  }
+
+  function setSharingModeBadge(mode) {
+    const badge = document.getElementById('sharing-mode-badge');
+    if (!badge) return;
+    if (mode === 'single') {
+      badge.innerText = '👤 Singola';
+      badge.style.background = '#fce7f3';
+      badge.style.color = '#9d174d';
+      badge.classList.remove('hidden');
+    } else {
+      badge.innerText = '👥 Multipla';
+      badge.style.background = '#ede9fe';
+      badge.style.color = '#6d28d9';
+      badge.classList.remove('hidden');
+    }
   }
 
   async function createRoom() {
@@ -724,6 +754,8 @@ app.get('/', (req, res) => {
     }
 
     const expiryMinutes = parseInt(document.getElementById('expiry-select').value, 10) || 5;
+    const sharingMode = document.getElementById('sharing-mode-select').value;
+    const multiDownload = (sharingMode === 'multi');
 
     let payloadData = {
       text: text || null,
@@ -794,9 +826,14 @@ app.get('/', (req, res) => {
         return;
       }
       updateLoading('Invio in corso...', 'Trasferimento dei dati al server, attendere prego.', 88);
-      console.log('[WS] onopen, invio CREATE con scadenza', expiryMinutes, 'minuti');
+      console.log('[WS] onopen, invio CREATE. scadenza:', expiryMinutes, 'min, multi:', multiDownload);
       try {
-        ws.send(JSON.stringify({ type: 'CREATE', payload: payloadData, expiryMinutes: expiryMinutes }));
+        ws.send(JSON.stringify({
+          type: 'CREATE',
+          payload: payloadData,
+          expiryMinutes: expiryMinutes,
+          multiDownload: multiDownload
+        }));
       } catch (e) {
         console.error('[WS] errore send:', e);
         hideLoading();
@@ -834,6 +871,8 @@ app.get('/', (req, res) => {
         document.getElementById('qrcode').innerHTML = '<img src="' + data.qr + '" width="180" height="180" />';
         generatedTargetUrl = data.targetUrl;
 
+        setSharingModeBadge(data.multiDownload ? 'multi' : 'single');
+
         var displayUrl = data.targetUrl;
         var sepIdx = displayUrl.indexOf('://');
         if (sepIdx !== -1) {
@@ -846,10 +885,11 @@ app.get('/', (req, res) => {
           : expiryMinutes;
         startCountdown(serverExpiryMinutes * 60);
       } else if (data.type === 'CONNECTED') {
-        document.getElementById('status-msg').innerText = '✅ Dispositivo connesso! Trasferimento completato.';
+        const n = data.deviceId || 1;
+        document.getElementById('status-msg').innerText = '✅ Dispositivo ' + n + ' connesso! Trasferimento completato.';
         triggerFeedback();
       } else if (data.type === 'DOWNLOADED') {
-        appendDownloadLog(data.fileName || null);
+        appendDownloadLog(data.fileName || null, data.deviceId || null);
         triggerFeedback();
       } else if (data.type === 'CANCELLED') {
         waitingForCancel = false;
@@ -934,6 +974,8 @@ app.get('/', (req, res) => {
         document.getElementById('qrcode').innerHTML = '<img src="' + data.qr + '" width="180" height="180" />';
         generatedTargetUrl = data.targetUrl;
 
+        setSharingModeBadge(data.multiDownload ? 'multi' : 'single');
+
         var displayUrl = data.targetUrl;
         var sepIdx = displayUrl.indexOf('://');
         if (sepIdx !== -1) {
@@ -943,14 +985,14 @@ app.get('/', (req, res) => {
 
         if (data.downloadLog && data.downloadLog.length > 0) {
           data.downloadLog.forEach(function(entry) {
-            appendDownloadLog(entry.fileName || null);
+            appendDownloadLog(entry.fileName || null, entry.deviceId || null);
           });
         }
 
         startCountdown(data.remainingSeconds);
 
-        if (data.receiverConnected) {
-          document.getElementById('status-msg').innerText = '✅ Dispositivo connesso! Trasferimento completato.';
+        if (data.receiverCount && data.receiverCount > 0) {
+          document.getElementById('status-msg').innerText = '✅ ' + data.receiverCount + ' dispositivo/i connesso/i! Trasferimento completato.';
         } else {
           document.getElementById('status-msg').innerText = 'In attesa del dispositivo ricevente...';
         }
@@ -1087,6 +1129,9 @@ app.get('/', (req, res) => {
       } else if (data.type === 'ERROR') {
         hideReceiveLoading();
         alert(data.message);
+      } else if (data.type === 'CANCELLED_BY_SENDER') {
+        hideReceiveLoading();
+        alert('⚠️ Il mittente ha annullato questo trasferimento.');
       }
     };
 
@@ -1254,13 +1299,15 @@ wss.on('connection', (ws, req) => {
         const qrUrl = await QRCode.toDataURL(targetUrl);
 
         const senderToken = crypto.randomBytes(16).toString('hex');
+        const multiDownload = !!data.multiDownload;
         
         rooms.set(code, {
           payload: data.payload,
           senderWs: ws,
           senderToken: senderToken,
-          receiverWs: null,
-          receiverConnected: false,
+          receiverWsList: [],
+          receiverCount: 0,
+          multiDownload: multiDownload,
           downloadLog: [],
           createdAt: Date.now(),
           expiryMs: expiryMs,
@@ -1279,6 +1326,7 @@ wss.on('connection', (ws, req) => {
           qr: qrUrl,
           targetUrl,
           expiryMinutes: expiryMinutes,
+          multiDownload: multiDownload,
           senderToken: senderToken
         }));
       } 
@@ -1294,13 +1342,27 @@ wss.on('connection', (ws, req) => {
           return;
         }
 
-        ws.send(JSON.stringify({ type: 'PAYLOAD', payload: room.payload }));
+        // Assegna un deviceId incrementale
+        room.receiverCount++;
+        const deviceId = room.receiverCount;
+
+        ws.send(JSON.stringify({ type: 'PAYLOAD', payload: room.payload, deviceId: deviceId }));
         if (room.senderWs && room.senderWs.readyState === WebSocket.OPEN) {
-          room.senderWs.send(JSON.stringify({ type: 'CONNECTED' }));
+          room.senderWs.send(JSON.stringify({
+            type: 'CONNECTED',
+            deviceId: deviceId,
+            receiverCount: room.receiverCount
+          }));
         }
-        room.payload = null;
-        room.receiverWs = ws;
-        room.receiverConnected = true;
+
+        room.receiverWsList.push({ ws: ws, deviceId: deviceId });
+
+        // In modalità singola il payload si autodistrugge al primo JOIN
+        // In modalità multipla rimane fino alla scadenza
+        if (!room.multiDownload) {
+          room.payload = null;
+        }
+
         currentRoom = data.code;
         currentRole = 'receiver';
       }
@@ -1331,7 +1393,8 @@ wss.on('connection', (ws, req) => {
           targetUrl: room.targetUrl,
           expiryMinutes: room.expiryMinutes,
           remainingSeconds: remainingSeconds,
-          receiverConnected: room.receiverConnected,
+          multiDownload: room.multiDownload,
+          receiverCount: room.receiverCount,
           downloadLog: room.downloadLog
         }));
       }
@@ -1340,16 +1403,27 @@ wss.on('connection', (ws, req) => {
         const room = rooms.get(currentRoom);
         if (!room) return;
 
+        // Trova il deviceId di questo receiver
+        let deviceId = null;
+        for (let i = 0; i < room.receiverWsList.length; i++) {
+          if (room.receiverWsList[i].ws === ws) {
+            deviceId = room.receiverWsList[i].deviceId;
+            break;
+          }
+        }
+
         const logEntry = {
           fileName: data.fileName || null,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          deviceId: deviceId
         };
         room.downloadLog.push(logEntry);
 
         if (room.senderWs && room.senderWs.readyState === WebSocket.OPEN) {
           room.senderWs.send(JSON.stringify({
             type: 'DOWNLOADED',
-            fileName: data.fileName || null
+            fileName: data.fileName || null,
+            deviceId: deviceId
           }));
         }
       }
@@ -1367,14 +1441,17 @@ wss.on('connection', (ws, req) => {
 
         clearTimeout(room.timer);
 
-        if (room.receiverWs && room.receiverWs.readyState === WebSocket.OPEN) {
-          try {
-            room.receiverWs.send(JSON.stringify({
-              type: 'CANCELLED_BY_SENDER',
-              message: 'Il mittente ha annullato il trasferimento.'
-            }));
-          } catch (e) {}
-        }
+        // Avvisa TUTTI i destinatari ancora connessi
+        room.receiverWsList.forEach(function(r) {
+          if (r.ws.readyState === WebSocket.OPEN) {
+            try {
+              r.ws.send(JSON.stringify({
+                type: 'CANCELLED_BY_SENDER',
+                message: 'Il mittente ha annullato il trasferimento.'
+              }));
+            } catch (e) {}
+          }
+        });
 
         rooms.delete(currentRoom);
         console.log('[CANCEL] room ' + currentRoom + ' cancellata dal mittente');
@@ -1399,9 +1476,9 @@ wss.on('connection', (ws, req) => {
         room.senderWs = null;
       }
     } else if (currentRole === 'receiver') {
-      if (room.receiverWs === ws) {
-        room.receiverWs = null;
-      }
+      room.receiverWsList = room.receiverWsList.filter(function(r) {
+        return r.ws !== ws;
+      });
     }
   };
 });
