@@ -236,13 +236,14 @@ app.get('/', (req, res) => {
 
               const itemDiv = document.createElement('div');
               itemDiv.className = 'file-item';
-              itemDiv.innerHTML = \`
+              itemDiv.innerHTML = `
                 <div>
-                  <strong>\${fileObj.fileName}</strong><br>
-                  <span style="color: #64748b; font-size: 11px;">\${formatBytes(blob.size)}</span>
+                  <strong>${fileObj.fileName}</strong><br>
+                  <span style="color: #64748b; font-size: 11px;">${formatBytes(blob.size)}</span>
+                  <div id="status-${index}" style="color: #059669; font-size: 11px; font-weight: bold; margin-top: 3px; display: none;">✅ Salvato nei download!</div>
                 </div>
-                <a href="\${blobUrl}" download="\${fileObj.fileName}" class="download-btn">💾 Scarica</a>
-              \`;
+                <a href="${blobUrl}" download="${fileObj.fileName}" class="download-btn" onclick="handleDownload(this, 'status-${index}')">💾 Scarica</a>
+              `;
               filesList.appendChild(itemDiv);
             });
           }
@@ -250,6 +251,18 @@ app.get('/', (req, res) => {
           alert(data.message);
         }
       };
+    }
+
+    function handleDownload(element, statusId) {
+      // Cambia visivamente il pulsante per dare feedback immediato
+      element.innerText = '✅ Scaricato';
+      element.style.background = '#0284c7';
+      
+      // Mostra la scritta di conferma vicino al file
+      const statusEl = document.getElementById(statusId);
+      if (statusEl) {
+        statusEl.style.display = 'block';
+      }
     }
 
     function arrayBufferToBase64(buffer) {
