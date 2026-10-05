@@ -10,7 +10,6 @@ const PORT = process.env.PORT || 3000;
 const app = express();
 const server = http.createServer(app);
 
-// Limite a 100MB per gestire più file contemporaneamente
 const wss = new WebSocket.Server({ server, maxPayload: 100 * 1024 * 1024 });
 
 const rooms = new Map();
@@ -171,6 +170,83 @@ app.get('/', (req, res) => {
       text-align: center;
     }
     #reconnect-banner.hidden { display: none; }
+
+    /* === Anteprima file selezionati (lato INVIA) === */
+    #selected-files-preview {
+      margin-bottom: 12px;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    #selected-files-preview:empty { display: none; }
+    .selected-file-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+    .selected-file-item .sf-preview {
+      width: 42px;
+      height: 42px;
+      border-radius: 6px;
+      object-fit: cover;
+      background: #e2e8f0;
+      border: 1px solid #cbd5e1;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+    .selected-file-item .sf-info {
+      flex-grow: 1;
+      min-width: 0;
+      text-align: left;
+      overflow: hidden;
+    }
+    .selected-file-item .sf-info strong {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #0f172a;
+      font-size: 12px;
+    }
+    .selected-file-item .sf-info span {
+      color: #64748b;
+      font-size: 11px;
+    }
+    .selected-file-item .sf-remove {
+      background: #ef4444;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      width: 28px;
+      height: 28px;
+      min-width: 28px;
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+      padding: 0;
+      margin: 0;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+    .selected-file-item .sf-remove:hover { background: #dc2626; }
+
+    /* Pulsante annulla trasferimento */
+    #cancel-transfer-btn {
+      background: #ef4444;
+      margin-top: 12px;
+    }
+    #cancel-transfer-btn:hover { background: #dc2626; }
   </style>
 </head>
 <body>
@@ -200,6 +276,9 @@ app.get('/', (req, res) => {
         <p id="drop-zone-text">📁 Trascina qui i tuoi file oppure <span style="color: #2563eb; text-decoration: underline;">sfoglia</span></p>
       </div>
       <input type="file" id="file-input" multiple style="display: none;" onchange="updateFileLabel()" />
+
+      <!-- Anteprima dei file selezionati con pulsante rimuovi -->
+      <div id="selected-files-preview"></div>
 
       <!-- Selettore tempo di scadenza -->
       <div style="text-align: left; margin-bottom: 5px;">
@@ -234,8 +313,11 @@ app.get('/', (req, res) => {
       <!-- Log notifiche download ricevute dal mittente -->
       <div id="download-log"></div>
 
+      <!-- Annulla trasferimento -->
+      <button id="cancel-transfer-btn" onclick="cancelTransfer()">🗑️ Annulla Trasferimento</button>
+
       <!-- Pulsante nuovo trasferimento -->
-      <button onclick="resetApp()" style="background: #64748b; margin-top: 12px;">↩️ Nuovo Trasferimento</button>
+      <button onclick="resetApp()" style="background: #64748b; margin-top: 8px;">↩️ Nuovo Trasferimento</button>
     </div>
 
     <div class="divider"><span>OPPURE RICEVI</span></div>
@@ -303,6 +385,10 @@ app.get('/', (req, res) => {
   let receivedFiles = [];
   let selectedFilesArray = [];
   let cancelRequested = false;
+  let waitingForCancel = false;
+
+  // Traccia blob URL delle anteprime per revocarli
+  let previewBlobUrls = [];
 
   // === Utility localStorage per token mittente ===
   function getStoredToken(code) {
@@ -331,7 +417,6 @@ app.get('/', (req, res) => {
     const codeParam = urlParams.get('code');
     if (codeParam) {
       document.getElementById('code-input').value = codeParam;
-      // Se abbiamo un token salvato per questo codice, siamo il mittente originale
       const storedToken = getStoredToken(codeParam);
       if (storedToken) {
         console.log('[INIT] trovato token per codice', codeParam, '- riconnessione come mittente');
@@ -408,7 +493,7 @@ app.get('/', (req, res) => {
       if (e.dataTransfer && e.dataTransfer.files.length > 0) {
         selectedFilesArray = Array.from(e.dataTransfer.files);
         console.log('[DROP] file selezionati:', selectedFilesArray.length);
-        updateFileLabelText(selectedFilesArray.length);
+        renderSelectedFiles();
       }
     });
   }
@@ -418,10 +503,10 @@ app.get('/', (req, res) => {
     if (input.files.length > 0) {
       selectedFilesArray = Array.from(input.files);
       console.log('[INPUT] file selezionati:', selectedFilesArray.length);
-      updateFileLabelText(selectedFilesArray.length);
+      renderSelectedFiles();
     } else {
       selectedFilesArray = [];
-      updateFileLabelText(0);
+      renderSelectedFiles();
     }
   }
 
@@ -431,6 +516,66 @@ app.get('/', (req, res) => {
       text.innerHTML = '✅ <strong>' + count + ' file</strong> selezionati';
     } else {
       text.innerHTML = '📁 Trascina qui i tuoi file oppure <span style="color: #2563eb; text-decoration: underline;">sfoglia</span>';
+    }
+  }
+
+  // === Anteprima file selezionati con possibilità di rimozione ===
+  function renderSelectedFiles() {
+    const container = document.getElementById('selected-files-preview');
+    if (!container) return;
+
+    // Revoca vecchi blob URL per evitare memory leak
+    previewBlobUrls.forEach(function(url) {
+      try { URL.revokeObjectURL(url); } catch (e) {}
+    });
+    previewBlobUrls = [];
+    container.innerHTML = '';
+
+    if (selectedFilesArray.length === 0) {
+      updateFileLabelText(0);
+      return;
+    }
+
+    updateFileLabelText(selectedFilesArray.length);
+
+    selectedFilesArray.forEach(function(file, index) {
+      let previewHtml;
+      if (file.type && file.type.startsWith('image/')) {
+        const url = URL.createObjectURL(file);
+        previewBlobUrls.push(url);
+        previewHtml = '<img src="' + url + '" class="sf-preview" alt="preview" />';
+      } else if (file.type && file.type.startsWith('video/')) {
+        const url = URL.createObjectURL(file);
+        previewBlobUrls.push(url);
+        previewHtml = '<video src="' + url + '" class="sf-preview" muted></video>';
+      } else {
+        previewHtml = '<div class="sf-preview">📄</div>';
+      }
+
+      const item = document.createElement('div');
+      item.className = 'selected-file-item';
+      item.innerHTML = previewHtml +
+        '<div class="sf-info">' +
+          '<strong>' + escapeHtml(file.name) + '</strong>' +
+          '<span>' + formatBytes(file.size) + '</span>' +
+        '</div>' +
+        '<button type="button" class="sf-remove" onclick="removeSelectedFile(' + index + ')" title="Rimuovi questo file">✖</button>';
+
+      container.appendChild(item);
+    });
+  }
+
+  function removeSelectedFile(index) {
+    if (index < 0 || index >= selectedFilesArray.length) return;
+    console.log('[REMOVE] rimuovo file indice', index, ':', selectedFilesArray[index].name);
+    selectedFilesArray.splice(index, 1);
+    renderSelectedFiles();
+    triggerSmallFeedback();
+  }
+
+  function triggerSmallFeedback() {
+    if ('vibrate' in navigator) {
+      navigator.vibrate(30);
     }
   }
 
@@ -534,8 +679,8 @@ app.get('/', (req, res) => {
     } catch (e) {}
     clearInterval(countdownInterval);
     cancelRequested = false;
+    waitingForCancel = false;
 
-    // Rimuove ?code dall'URL se presente
     try {
       if (window.history && window.history.replaceState) {
         window.history.replaceState(null, '', window.location.pathname);
@@ -560,7 +705,7 @@ app.get('/', (req, res) => {
     selectedFilesArray = [];
     receivedFiles = [];
     generatedTargetUrl = '';
-    updateFileLabelText(0);
+    renderSelectedFiles();
     updateCharCounter();
   }
 
@@ -674,7 +819,6 @@ app.get('/', (req, res) => {
         updateLoading('Completato!', 'Codice generato con successo.', 100);
         setTimeout(hideLoading, 300);
 
-        // Salva il token per riconnessioni future
         if (data.senderToken) {
           storeToken(data.code, data.senderToken);
           console.log('[TOKEN] salvato per codice', data.code);
@@ -687,7 +831,6 @@ app.get('/', (req, res) => {
           }
         } catch (e) {}
 
-        // Aggiorna l'URL con ?code=XXXX per permettere refresh/riconnessione
         try {
           if (window.history && window.history.replaceState) {
             window.history.replaceState(null, '', '?code=' + data.code);
@@ -717,6 +860,15 @@ app.get('/', (req, res) => {
       } else if (data.type === 'DOWNLOADED') {
         appendDownloadLog(data.fileName || null);
         triggerFeedback();
+      } else if (data.type === 'CANCELLED') {
+        waitingForCancel = false;
+        var cCode = document.getElementById('room-code').innerText;
+        if (cCode && cCode.length === 4) clearToken(cCode);
+        alert('✅ Trasferimento annullato con successo.\\n\\nIl codice non è più valido e i dati sono stati rimossi dalla memoria del server.');
+        resetApp();
+      } else if (data.type === 'CANCEL_FAILED') {
+        waitingForCancel = false;
+        alert('❌ Impossibile annullare: la sessione non è più valida (potrebbe essere già scaduta).');
       }
     };
 
@@ -734,6 +886,32 @@ app.get('/', (req, res) => {
         hideLoading();
       }
     };
+  }
+
+  // === Annulla trasferimento già generato ===
+  function cancelTransfer() {
+    if (waitingForCancel) return;
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      alert('⚠️ Connessione al server non attiva.\\nLa sessione potrebbe essere già scaduta: puoi semplicemente cliccare "Nuovo Trasferimento".');
+      return;
+    }
+
+    const confirmMsg = 'Sei sicuro di voler annullare questo trasferimento?\\n\\n' +
+      '• Il codice non sarà più valido\\n' +
+      '• I file verranno rimossi dalla memoria del server\\n' +
+      '• Chi non ha ancora scaricato NON potrà più farlo';
+
+    if (!confirm(confirmMsg)) return;
+
+    waitingForCancel = true;
+    try {
+      ws.send(JSON.stringify({ type: 'CANCEL' }));
+      console.log('[CANCEL] inviato al server');
+    } catch (e) {
+      waitingForCancel = false;
+      alert('Errore nell\'invio della richiesta di annullamento: ' + e.message);
+    }
   }
 
   // === Riconnessione come mittente originale ===
@@ -774,14 +952,12 @@ app.get('/', (req, res) => {
         }
         document.getElementById('direct-link-text').innerText = 'Link: ' + displayUrl;
 
-        // Ripristina il log dei download ricevuti finora
         if (data.downloadLog && data.downloadLog.length > 0) {
           data.downloadLog.forEach(function(entry) {
             appendDownloadLog(entry.fileName || null);
           });
         }
 
-        // Avvia il countdown con il tempo rimanente
         startCountdown(data.remainingSeconds);
 
         if (data.receiverConnected) {
@@ -790,7 +966,6 @@ app.get('/', (req, res) => {
           document.getElementById('status-msg').innerText = 'In attesa del dispositivo ricevente...';
         }
 
-        // Rimuove ?code dall'URL per pulizia (l'utente può comunque ricaricare e ritorna qui)
         try {
           if (window.history && window.history.replaceState) {
             window.history.replaceState(null, '', '?code=' + data.code);
@@ -798,7 +973,6 @@ app.get('/', (req, res) => {
         } catch (e) {}
 
       } else if (data.type === 'RECONNECT_FAILED') {
-        // Token non valido o room scaduta: passa al flusso normale di JOIN
         console.log('[RECONNECT] fallito, provo JOIN normale');
         clearToken(code);
         hideLoading();
@@ -1069,7 +1243,7 @@ app.get('/', (req, res) => {
 
 wss.on('connection', (ws, req) => {
   let currentRoom = null;
-  let currentRole = null; // 'sender' | 'receiver'
+  let currentRole = null;
 
   const host = req.headers.host;
   const protocol = req.headers['x-forwarded-proto'] || 'http';
@@ -1090,7 +1264,6 @@ wss.on('connection', (ws, req) => {
         const targetUrl = `${currentPublicUrl}?code=${code}`;
         const qrUrl = await QRCode.toDataURL(targetUrl);
 
-        // Token segreto noto solo al mittente (mai condiviso nel link/QR)
         const senderToken = crypto.randomBytes(16).toString('hex');
         
         rooms.set(code, {
@@ -1136,8 +1309,6 @@ wss.on('connection', (ws, req) => {
         if (room.senderWs && room.senderWs.readyState === WebSocket.OPEN) {
           room.senderWs.send(JSON.stringify({ type: 'CONNECTED' }));
         }
-        // Il payload può essere liberato dopo la consegna, ma la room resta
-        // fino alla scadenza per permettere notifiche di download e riconnessione mittente.
         room.payload = null;
         room.receiverWs = ws;
         room.receiverConnected = true;
@@ -1156,7 +1327,6 @@ wss.on('connection', (ws, req) => {
           return;
         }
 
-        // Ripristina il mittente
         room.senderWs = ws;
         currentRoom = data.code;
         currentRole = 'sender';
@@ -1181,14 +1351,12 @@ wss.on('connection', (ws, req) => {
         const room = rooms.get(currentRoom);
         if (!room) return;
 
-        // Salva nel log della room
         const logEntry = {
           fileName: data.fileName || null,
           timestamp: Date.now()
         };
         room.downloadLog.push(logEntry);
 
-        // Inoltra al mittente se connesso
         if (room.senderWs && room.senderWs.readyState === WebSocket.OPEN) {
           room.senderWs.send(JSON.stringify({
             type: 'DOWNLOADED',
@@ -1196,16 +1364,49 @@ wss.on('connection', (ws, req) => {
           }));
         }
       }
+
+      // === Annulla trasferimento: solo il mittente connesso può farlo ===
+      else if (data.type === 'CANCEL') {
+        if (currentRole !== 'sender' || !currentRoom) {
+          ws.send(JSON.stringify({ type: 'CANCEL_FAILED' }));
+          return;
+        }
+        const room = rooms.get(currentRoom);
+        if (!room) {
+          ws.send(JSON.stringify({ type: 'CANCEL_FAILED' }));
+          return;
+        }
+
+        // Ferma il timer di scadenza
+        clearTimeout(room.timer);
+
+        // Avvisa il destinatario se è ancora connesso (probabilmente ha già scaricato, ma per pulizia)
+        if (room.receiverWs && room.receiverWs.readyState === WebSocket.OPEN) {
+          try {
+            room.receiverWs.send(JSON.stringify({
+              type: 'CANCELLED_BY_SENDER',
+              message: 'Il mittente ha annullato il trasferimento.'
+            }));
+          } catch (e) {}
+        }
+
+        // Rimuove definitivamente la room dalla memoria
+        rooms.delete(currentRoom);
+        console.log('[CANCEL] room ' + currentRoom + ' cancellata dal mittente');
+
+        // Conferma al mittente
+        ws.send(JSON.stringify({ type: 'CANCELLED' }));
+
+        // Il mittente ha finito la sua sessione: azzera riferimento locale
+        currentRoom = null;
+        currentRole = null;
+      }
     } catch (e) {
       console.error(e);
     }
   });
 
   ws.onclose = () => {
-    // IMPORTANTE: NON cancelliamo la room alla disconnessione.
-    // La room vive fino alla scadenza del timer, indipendentemente da chi si disconnette.
-    // Se il mittente si disconnette, azzeriamo solo il riferimento per evitare
-    // errori nell'inoltro delle notifiche download.
     if (!currentRoom) return;
     const room = rooms.get(currentRoom);
     if (!room) return;
