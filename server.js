@@ -36,6 +36,8 @@ app.get('/', (req, res) => {
   
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M13 2L3 14h9l-1 8 10-12h-9l1-8z'/></svg>">
   
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f1f5f9; margin: 0; padding: 20px; display: flex; justify-content: center; min-height: 100vh; box-sizing: border-box; }
     .card { background: #ffffff; max-width: 500px; width: 100%; padding: 28px; border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04); text-align: center; margin: auto; }
@@ -72,6 +74,8 @@ app.get('/', (req, res) => {
     .file-info { flex-grow: 1; overflow: hidden; text-overflow: ellipsis; }
     .download-btn { background: #059669; text-decoration: none; color: white; padding: 8px 12px; border-radius: 6px; font-weight: 600; font-size: 12px; display: inline-block; white-space: nowrap; border: none; cursor: pointer; }
     .download-all-btn { background: #0284c7; color: white; border: none; padding: 10px; font-size: 13px; font-weight: 600; border-radius: 8px; cursor: pointer; margin-bottom: 12px; width: 100%; }
+    .download-zip-btn { background: #7c3aed; color: white; border: none; padding: 10px; font-size: 13px; font-weight: 600; border-radius: 8px; cursor: pointer; margin-bottom: 12px; width: 100%; }
+    .download-zip-btn:hover { background: #6d28d9; }
     
     /* Countdown Timer */
     .timer-badge { display: inline-block; background: #fef3c7; color: #92400e; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 20px; margin-bottom: 10px; }
@@ -238,6 +242,7 @@ app.get('/', (req, res) => {
 
       <!-- Lista File Ricevuti -->
       <div id="received-files-box" class="hidden">
+        <button id="download-zip-btn" class="download-zip-btn hidden" onclick="downloadAllAsZip()">📦 Scarica Tutti come ZIP</button>
         <button id="download-all-btn" class="download-all-btn" onclick="downloadAllFiles()">💾 Scarica Tutti i File</button>
         <div id="files-list"></div>
       </div>
@@ -637,7 +642,6 @@ app.get('/', (req, res) => {
         document.getElementById('status-msg').innerText = '✅ Dispositivo connesso! Trasferimento completato.';
         triggerFeedback();
       } else if (data.type === 'DOWNLOADED') {
-        // === Notifica di download ricevuta dal destinatario ===
         appendDownloadLog(data.fileName || null);
         triggerFeedback();
       }
@@ -695,6 +699,14 @@ app.get('/', (req, res) => {
           filesBox.classList.remove('hidden');
           filesList.innerHTML = '';
 
+          // Mostra il pulsante ZIP solo se ci sono 2 o più file
+          const zipBtn = document.getElementById('download-zip-btn');
+          if (payload.files.length >= 2) {
+            zipBtn.classList.remove('hidden');
+          } else {
+            zipBtn.classList.add('hidden');
+          }
+
           payload.files.forEach((fileObj, index) => {
             const blob = base64ToBlob(fileObj.fileData, fileObj.fileType);
             const blobUrl = URL.createObjectURL(blob);
@@ -747,6 +759,61 @@ app.get('/', (req, res) => {
         if (btn) btn.click();
       }, index * 400);
     });
+  }
+
+  // === Scarica tutti i file come un unico ZIP ===
+  async function downloadAllAsZip() {
+    if (!receivedFiles || receivedFiles.length === 0) {
+      return alert('Nessun file da comprimere.');
+    }
+    if (typeof JSZip === 'undefined') {
+      return alert('Libreria ZIP non disponibile (sei offline?). Usa "Scarica Tutti i File".');
+    }
+
+    const zipBtn = document.getElementById('download-zip-btn');
+    const originalText = zipBtn.innerText;
+    zipBtn.disabled = true;
+
+    try {
+      const zip = new JSZip();
+
+      receivedFiles.forEach((fileObj) => {
+        // fileData è base64, JSZip lo accetta con l'opzione base64: true
+        // Usiamo un nome "unico" se ci sono duplicati
+        zip.file(fileObj.fileName, fileObj.fileData, { base64: true });
+      });
+
+      const content = await zip.generateAsync(
+        { type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } },
+        (metadata) => {
+          const pct = Math.round(metadata.percent);
+          zipBtn.innerText = '📦 Compressione... ' + pct + '%';
+        }
+      );
+
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      const now = new Date();
+      const pad = (n) => (n < 10 ? '0' + n : '' + n);
+      const stamp = now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + '_' +
+                    pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds());
+      a.href = url;
+      a.download = 'QuickPaste_' + stamp + '.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 8000);
+
+      // Notifica il mittente che è stato scaricato uno ZIP
+      notifyDownload('ZIP (' + receivedFiles.length + ' file)');
+      triggerFeedback();
+    } catch (err) {
+      console.error('[ZIP] errore:', err);
+      alert('Errore nella creazione dello ZIP: ' + err.message);
+    } finally {
+      zipBtn.innerText = originalText;
+      zipBtn.disabled = false;
+    }
   }
 
   function handleDownload(element, statusId, fileName) {
@@ -853,8 +920,6 @@ wss.on('connection', (ws, req) => {
           if (room.senderWs.readyState === WebSocket.OPEN) {
             room.senderWs.send(JSON.stringify({ type: 'CONNECTED' }));
           }
-          // Non cancelliamo la room: la teniamo per inoltrare le notifiche di download.
-          // Liberiamo solo la memoria del payload (non più necessaria).
           room.payload = null;
           room.receiverWs = ws;
           currentRoom = data.code;
@@ -863,7 +928,6 @@ wss.on('connection', (ws, req) => {
         }
       }
 
-      // === Inoltro notifica di download dal destinatario al mittente ===
       else if (data.type === 'DOWNLOADED') {
         const room = rooms.get(currentRoom);
         if (room && room.senderWs && room.senderWs.readyState === WebSocket.OPEN) {
