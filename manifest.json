@@ -3,13 +3,13 @@
   "name": "QuickPaste Transfer",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/93/93634.png",
-      "type": "image/png",
-      "sizes": "512x512"
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%232563eb'><path d='M13 2L3 14h9l-1 8 10-12h-9l1-8z'/></svg>",
+      "type": "image/svg+xml",
+      "sizes": "any"
     }
   ],
   "start_url": "/",
-  "background_color": "#f4f6f8",
+  "background_color": "#f1f5f9",
   "theme_color": "#2563eb",
   "display": "standalone",
   "orientation": "portrait"
