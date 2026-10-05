@@ -49,12 +49,11 @@ app.get('/', (req, res) => {
     textarea { width: 100%; height: 95px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 10px; box-sizing: border-box; font-size: 14px; margin-bottom: 14px; resize: vertical; font-family: inherit; transition: border-color 0.2s; }
     textarea:focus, input[type="text"]:focus { outline: none; border-color: #2563eb; }
     input[type="text"] { width: 100%; padding: 12px; font-size: 20px; text-align: center; border: 1px solid #cbd5e1; border-radius: 10px; box-sizing: border-box; letter-spacing: 6px; margin-bottom: 15px; font-weight: 600; font-family: monospace; }
-    input[type="file"] { margin-bottom: 15px; width: 100%; font-size: 13px; color: #475569; }
     
     /* Area Drag & Drop */
-    .drop-zone { border: 2px dashed #cbd5e1; border-radius: 10px; padding: 15px; text-align: center; background: #f8fafc; cursor: pointer; transition: background 0.2s, border-color 0.2s; margin-bottom: 15px; }
+    .drop-zone { border: 2px dashed #cbd5e1; border-radius: 10px; padding: 18px; text-align: center; background: #f8fafc; cursor: pointer; transition: background 0.2s, border-color 0.2s; margin-bottom: 15px; }
     .drop-zone.dragover { background: #eff6ff; border-color: #2563eb; }
-    .drop-zone p { margin: 0; font-size: 13px; color: #64748b; font-weight: 500; }
+    .drop-zone p { margin: 0; font-size: 13px; color: #64748b; font-weight: 500; pointer-events: none; }
     
     button { width: 100%; background: #2563eb; color: white; border: none; padding: 13px; font-size: 15px; font-weight: 600; border-radius: 10px; cursor: pointer; transition: background 0.2s, transform 0.1s; margin-top: 5px; }
     button:hover { background: #1d4ed8; }
@@ -107,11 +106,11 @@ app.get('/', (req, res) => {
         <label style="font-size: 12px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Seleziona Foto / File (Multipli):</label>
       </div>
 
-      <!-- Area Drag & Drop -->
+      <!-- Area Drag & Drop e Input File -->
       <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
         <p id="drop-zone-text">📁 Trascina qui i tuoi file oppure <span style="color: #2563eb; text-decoration: underline;">sfoglia</span></p>
-        <input type="file" id="file-input" multiple style="display: none;" onchange="updateFileLabel()" />
       </div>
+      <input type="file" id="file-input" multiple style="display: none;" onchange="updateFileLabel()" />
 
       <button onclick="createRoom()">Genera Codice di Trasferimento</button>
     </div>
@@ -174,6 +173,7 @@ app.get('/', (req, res) => {
     let generatedTargetUrl = '';
     let countdownInterval = null;
     let receivedFiles = [];
+    let selectedFilesArray = []; // Memorizza i file sia da click che da Drag&Drop
 
     window.onload = () => {
       const urlParams = new URLSearchParams(window.location.search);
@@ -182,43 +182,61 @@ app.get('/', (req, res) => {
         document.getElementById('code-input').value = codeParam;
         joinRoom();
       }
-      setupDragAndDrop();
+      setupDragAndDropGlobal();
     };
 
-    // Gestione Drag & Drop
-    function setupDragAndDrop() {
+    // Blocco completo dell'apertura file su tutto il browser
+    function setupDragAndDropGlobal() {
       const dropZone = document.getElementById('drop-zone');
 
-      ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-        dropZone.addEventListener(eventName, preventDefaults, false);
-      });
-
-      function preventDefaults(e) {
+      window.addEventListener('dragover', (e) => {
         e.preventDefault();
         e.stopPropagation();
-      }
+      }, false);
 
-      ['dragenter', 'dragover'].forEach(eventName => {
-        dropZone.addEventListener(eventName, () => dropZone.classList.add('dragover'), false);
+      window.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }, false);
+
+      dropZone.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
       });
 
-      ['dragleave', 'drop'].forEach(eventName => {
-        dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'), false);
+      dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+      });
+
+      dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
       });
 
       dropZone.addEventListener('drop', (e) => {
-        const dt = e.dataTransfer;
-        const files = dt.files;
-        document.getElementById('file-input').files = files;
-        updateFileLabel();
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('dragover');
+
+        if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+          selectedFilesArray = Array.from(e.dataTransfer.files);
+          updateFileLabelText(selectedFilesArray.length);
+        }
       });
     }
 
     function updateFileLabel() {
       const input = document.getElementById('file-input');
-      const text = document.getElementById('drop-zone-text');
       if (input.files.length > 0) {
-        text.innerHTML = '✅ <strong>' + input.files.length + ' file</strong> selezionati';
+        selectedFilesArray = Array.from(input.files);
+        updateFileLabelText(selectedFilesArray.length);
+      }
+    }
+
+    function updateFileLabelText(count) {
+      const text = document.getElementById('drop-zone-text');
+      if (count > 0) {
+        text.innerHTML = '✅ <strong>' + count + ' file</strong> selezionati';
       } else {
         text.innerHTML = '📁 Trascina qui i tuoi file oppure <span style="color: #2563eb; text-decoration: underline;">sfoglia</span>';
       }
@@ -240,7 +258,7 @@ app.get('/', (req, res) => {
         osc.start();
         osc.stop(audioCtx.currentTime + 0.15);
       } catch (e) {
-        // AudioContext non supportato o bloccato dalle policy del browser
+        // AudioContext non supportato o bloccato
       }
     }
 
@@ -266,10 +284,8 @@ app.get('/', (req, res) => {
 
     async function createRoom() {
       const text = document.getElementById('text-input').value.trim();
-      const fileInput = document.getElementById('file-input');
-      const files = fileInput.files;
 
-      if (!text && files.length === 0) {
+      if (!text && selectedFilesArray.length === 0) {
         return alert('Inserisci del testo oppure seleziona almeno un file/foto!');
       }
 
@@ -278,9 +294,9 @@ app.get('/', (req, res) => {
         files: []
       };
 
-      if (files.length > 0) {
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
+      if (selectedFilesArray.length > 0) {
+        for (let i = 0; i < selectedFilesArray.length; i++) {
+          const file = selectedFilesArray[i];
           const arrayBuffer = await file.arrayBuffer();
           const base64 = arrayBufferToBase64(arrayBuffer);
           payloadData.files.push({
