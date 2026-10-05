@@ -168,20 +168,19 @@ app.get('/', (req, res) => {
   </div>
 
   <script>
+  // ============================================================
+  // NOTA IMPORTANTE: questo script è dentro un template literal di Node.
+  // Evitiamo regex con slash per non rompere il parsing del browser.
+  // ============================================================
+
+  console.log('[SCRIPT] QuickPaste caricato correttamente');
+
   let ws;
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   let generatedTargetUrl = '';
   let countdownInterval = null;
   let receivedFiles = [];
   let selectedFilesArray = [];
-
-  // Cattura QUALSIASI errore JS non gestito
-  window.addEventListener('error', (e) => {
-    alert('ERRORE JS: ' + e.message + '\nFile: ' + e.filename + '\nLinea: ' + e.lineno);
-  });
-  window.addEventListener('unhandledrejection', (e) => {
-    alert('PROMISE REJECTED: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
-  });
 
   window.onload = () => {
     console.log('[INIT] window.onload');
@@ -224,14 +223,13 @@ app.get('/', (req, res) => {
     });
 
     dropZone.addEventListener('drop', (e) => {
-      console.log('[DROP] file trascinati:', e.dataTransfer ? e.dataTransfer.files.length : 0);
       e.preventDefault();
       e.stopPropagation();
       dropZone.classList.remove('dragover');
 
       if (e.dataTransfer && e.dataTransfer.files.length > 0) {
         selectedFilesArray = Array.from(e.dataTransfer.files);
-        console.log('[DROP] selectedFilesArray.length =', selectedFilesArray.length);
+        console.log('[DROP] file selezionati:', selectedFilesArray.length);
         updateFileLabelText(selectedFilesArray.length);
       }
     });
@@ -239,10 +237,9 @@ app.get('/', (req, res) => {
 
   function updateFileLabel() {
     const input = document.getElementById('file-input');
-    console.log('[INPUT] file selezionati:', input.files.length);
     if (input.files.length > 0) {
       selectedFilesArray = Array.from(input.files);
-      console.log('[INPUT] selectedFilesArray.length =', selectedFilesArray.length);
+      console.log('[INPUT] file selezionati:', selectedFilesArray.length);
       updateFileLabelText(selectedFilesArray.length);
     } else {
       selectedFilesArray = [];
@@ -296,8 +293,7 @@ app.get('/', (req, res) => {
   }
 
   async function createRoom() {
-    console.log('[CREATE] avviato. Testo:', document.getElementById('text-input').value.trim().length, 'File:', selectedFilesArray.length);
-
+    console.log('[CREATE] avviato');
     const text = document.getElementById('text-input').value.trim();
 
     if (!text && selectedFilesArray.length === 0) {
@@ -313,11 +309,9 @@ app.get('/', (req, res) => {
       if (selectedFilesArray.length > 0) {
         for (let i = 0; i < selectedFilesArray.length; i++) {
           const file = selectedFilesArray[i];
-          console.log('[CREATE] leggo file', i, file.name, file.size, 'bytes');
+          console.log('[CREATE] leggo file:', file.name, file.size);
           const arrayBuffer = await file.arrayBuffer();
-          console.log('[CREATE] arrayBuffer pronto per', file.name);
           const base64 = arrayBufferToBase64(arrayBuffer);
-          console.log('[CREATE] base64 pronto per', file.name, 'lunghezza:', base64.length);
           payloadData.files.push({
             fileName: file.name,
             fileType: file.type || 'application/octet-stream',
@@ -327,26 +321,16 @@ app.get('/', (req, res) => {
         }
       }
     } catch (err) {
-      console.error('[CREATE] ERRORE lettura file:', err);
+      console.error('[CREATE] errore lettura file:', err);
       return alert('Errore nella lettura dei file: ' + err.message);
     }
 
-    console.log('[CREATE] payload pronto. Dimensione stimata JSON:', JSON.stringify(payloadData).length, 'caratteri');
-
-    try {
-      ws = new WebSocket(protocol + '//' + location.host);
-    } catch (e) {
-      console.error('[CREATE] errore creazione WebSocket:', e);
-      return alert('Errore creazione WebSocket: ' + e.message);
-    }
+    ws = new WebSocket(protocol + '//' + location.host);
 
     ws.onopen = () => {
-      console.log('[WS] onopen');
+      console.log('[WS] onopen, invio CREATE');
       try {
-        const msg = JSON.stringify({ type: 'CREATE', payload: payloadData });
-        console.log('[WS] invio messaggio, lunghezza:', msg.length);
-        ws.send(msg);
-        console.log('[WS] messaggio inviato');
+        ws.send(JSON.stringify({ type: 'CREATE', payload: payloadData }));
       } catch (e) {
         console.error('[WS] errore send:', e);
         alert('Errore invio: ' + e.message);
@@ -354,7 +338,6 @@ app.get('/', (req, res) => {
     };
 
     ws.onmessage = (event) => {
-      console.log('[WS] onmessage ricevuto:', event.data.substring(0, 200));
       const data = JSON.parse(event.data);
       if (data.type === 'CREATED') {
         document.getElementById('send-section').classList.add('hidden');
@@ -362,7 +345,15 @@ app.get('/', (req, res) => {
         document.getElementById('room-code').innerText = data.code;
         document.getElementById('qrcode').innerHTML = '<img src="' + data.qr + '" width="180" height="180" />';
         generatedTargetUrl = data.targetUrl;
-        document.getElementById('direct-link-text').innerText = 'Link: ' + data.targetUrl.replace(/^https?:\/\//, '');
+
+        // === QUI LA CORREZIONE: niente regex, solo metodi stringa ===
+        var displayUrl = data.targetUrl;
+        var sepIdx = displayUrl.indexOf('://');
+        if (sepIdx !== -1) {
+          displayUrl = displayUrl.substring(sepIdx + 3);
+        }
+        document.getElementById('direct-link-text').innerText = 'Link: ' + displayUrl;
+
         startCountdown();
       } else if (data.type === 'CONNECTED') {
         document.getElementById('status-msg').innerText = '✅ Dispositivo connesso! Trasferimento completato.';
@@ -372,11 +363,10 @@ app.get('/', (req, res) => {
 
     ws.onerror = (err) => {
       console.error('[WS] onerror:', err);
-      alert('Errore WebSocket. Controlla la console.');
     };
 
     ws.onclose = (e) => {
-      console.log('[WS] onclose. Code:', e.code, 'Reason:', e.reason, 'WasClean:', e.wasClean);
+      console.log('[WS] onclose. Code:', e.code);
       if (e.code === 1009) {
         alert('Payload troppo grande! Il server ha rifiutato il messaggio. Riduci i file.');
       }
@@ -439,7 +429,7 @@ app.get('/', (req, res) => {
                 '<span style="color: #64748b; font-size: 11px;">' + formatBytes(blob.size) + '</span>' +
                 '<div id="status-' + index + '" style="color: #059669; font-size: 11px; font-weight: bold; margin-top: 3px; display: none;">✅ Salvato nei download!</div>' +
               '</div>' +
-              '<a href="' + blobUrl + '" download="' + fileObj.fileName + '" id="dl-btn-' + index + '" class="download-btn" onclick="handleDownload(this, \'status-' + index + '\')">💾 Scarica</a>';
+              '<a href="' + blobUrl + '" download="' + fileObj.fileName + '" id="dl-btn-' + index + '" class="download-btn" onclick="handleDownload(this, &quot;status-' + index + '&quot;)">💾 Scarica</a>';
             
             filesList.appendChild(itemDiv);
           });
