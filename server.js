@@ -3,6 +3,7 @@ const http = require('http');
 const WebSocket = require('ws');
 const QRCode = require('qrcode');
 const path = require('path');
+const crypto = require('crypto');
 
 const PORT = process.env.PORT || 3000;
 
@@ -156,6 +157,20 @@ app.get('/', (req, res) => {
     }
     #download-log:empty { display: none; }
     #download-log .dl-entry { margin-bottom: 4px; }
+
+    /* Banner stato riconnessione */
+    #reconnect-banner {
+      background: #dbeafe;
+      border: 1px solid #93c5fd;
+      color: #1e40af;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+    #reconnect-banner.hidden { display: none; }
   </style>
 </head>
 <body>
@@ -205,6 +220,7 @@ app.get('/', (req, res) => {
     </div>
 
     <div id="result-section" class="hidden">
+      <div id="reconnect-banner" class="hidden">🔄 Sessione ripristinata</div>
       <div id="countdown" class="timer-badge">⏱️ Scade tra: 05:00</div>
       <p style="margin-bottom: 5px; font-size: 14px; color: #475569;">Inserisci questo codice o inquadra il QR Code:</p>
       <div id="room-code" class="code-display">----</div>
@@ -288,13 +304,41 @@ app.get('/', (req, res) => {
   let selectedFilesArray = [];
   let cancelRequested = false;
 
+  // === Utility localStorage per token mittente ===
+  function getStoredToken(code) {
+    try {
+      return localStorage.getItem('qp_token_' + code) || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function storeToken(code, token) {
+    try {
+      localStorage.setItem('qp_token_' + code, token);
+    } catch (e) {}
+  }
+
+  function clearToken(code) {
+    try {
+      localStorage.removeItem('qp_token_' + code);
+    } catch (e) {}
+  }
+
   window.onload = () => {
     console.log('[INIT] window.onload');
     const urlParams = new URLSearchParams(window.location.search);
     const codeParam = urlParams.get('code');
     if (codeParam) {
       document.getElementById('code-input').value = codeParam;
-      joinRoom();
+      // Se abbiamo un token salvato per questo codice, siamo il mittente originale
+      const storedToken = getStoredToken(codeParam);
+      if (storedToken) {
+        console.log('[INIT] trovato token per codice', codeParam, '- riconnessione come mittente');
+        reconnectAsSender(codeParam, storedToken);
+      } else {
+        joinRoom();
+      }
     }
     setupDragAndDropGlobal();
     updateCharCounter();
@@ -442,7 +486,6 @@ app.get('/', (req, res) => {
     document.getElementById('loading-text').innerText = text || 'Attendere...';
     document.getElementById('loading-subtext').innerText = subtext || '';
     document.getElementById('loading-progress-bar').style.width = (percent || 0) + '%';
-    // Il pulsante annulla è visibile di default (serve al mittente)
     document.getElementById('cancel-loading-btn').classList.remove('hidden');
     document.getElementById('loading-overlay').classList.remove('hidden');
   }
@@ -460,10 +503,8 @@ app.get('/', (req, res) => {
     document.getElementById('loading-progress-bar').style.width = '0%';
   }
 
-  // === Overlay dedicato al ricevente (senza pulsante annulla) ===
   function showReceiveLoading(text, subtext, percent) {
     showLoading(text, subtext, percent);
-    // Nasconde il pulsante "Annulla" che non ha senso durante il recupero dati
     document.getElementById('cancel-loading-btn').classList.add('hidden');
   }
 
@@ -471,7 +512,6 @@ app.get('/', (req, res) => {
     hideLoading();
   }
 
-  // === Annulla caricamento in corso (solo mittente) ===
   function cancelLoading() {
     console.log('[CANCEL] richiesto annullamento');
     cancelRequested = true;
@@ -495,8 +535,16 @@ app.get('/', (req, res) => {
     clearInterval(countdownInterval);
     cancelRequested = false;
 
+    // Rimuove ?code dall'URL se presente
+    try {
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    } catch (e) {}
+
     document.getElementById('send-section').classList.remove('hidden');
     document.getElementById('result-section').classList.add('hidden');
+    document.getElementById('reconnect-banner').classList.add('hidden');
 
     document.getElementById('text-input').value = '';
     document.getElementById('file-input').value = '';
@@ -626,10 +674,23 @@ app.get('/', (req, res) => {
         updateLoading('Completato!', 'Codice generato con successo.', 100);
         setTimeout(hideLoading, 300);
 
+        // Salva il token per riconnessioni future
+        if (data.senderToken) {
+          storeToken(data.code, data.senderToken);
+          console.log('[TOKEN] salvato per codice', data.code);
+        }
+
         try {
           if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(data.code).catch(() => {});
             console.log('[CLIPBOARD] codice copiato:', data.code);
+          }
+        } catch (e) {}
+
+        // Aggiorna l'URL con ?code=XXXX per permettere refresh/riconnessione
+        try {
+          if (window.history && window.history.replaceState) {
+            window.history.replaceState(null, '', '?code=' + data.code);
           }
         } catch (e) {}
 
@@ -675,12 +736,94 @@ app.get('/', (req, res) => {
     };
   }
 
-  // === Elaborazione del payload ricevuto (asincrona, con progresso) ===
+  // === Riconnessione come mittente originale ===
+  function reconnectAsSender(code, token) {
+    console.log('[RECONNECT] tentativo per codice', code);
+
+    showLoading(
+      'Riconnessione in corso...',
+      'Recupero della sessione ' + code + '...',
+      30
+    );
+
+    ws = new WebSocket(protocol + '//' + location.host);
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: 'RECONNECT_SENDER', code: code, token: token }));
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.type === 'RECONNECTED') {
+        updateLoading('Sessione ripristinata!', 'Preparazione interfaccia...', 100);
+        setTimeout(hideLoading, 300);
+
+        document.getElementById('send-section').classList.add('hidden');
+        document.getElementById('result-section').classList.remove('hidden');
+        document.getElementById('reconnect-banner').classList.remove('hidden');
+
+        document.getElementById('room-code').innerText = data.code;
+        document.getElementById('qrcode').innerHTML = '<img src="' + data.qr + '" width="180" height="180" />';
+        generatedTargetUrl = data.targetUrl;
+
+        var displayUrl = data.targetUrl;
+        var sepIdx = displayUrl.indexOf('://');
+        if (sepIdx !== -1) {
+          displayUrl = displayUrl.substring(sepIdx + 3);
+        }
+        document.getElementById('direct-link-text').innerText = 'Link: ' + displayUrl;
+
+        // Ripristina il log dei download ricevuti finora
+        if (data.downloadLog && data.downloadLog.length > 0) {
+          data.downloadLog.forEach(function(entry) {
+            appendDownloadLog(entry.fileName || null);
+          });
+        }
+
+        // Avvia il countdown con il tempo rimanente
+        startCountdown(data.remainingSeconds);
+
+        if (data.receiverConnected) {
+          document.getElementById('status-msg').innerText = '✅ Dispositivo connesso! Trasferimento completato.';
+        } else {
+          document.getElementById('status-msg').innerText = 'In attesa del dispositivo ricevente...';
+        }
+
+        // Rimuove ?code dall'URL per pulizia (l'utente può comunque ricaricare e ritorna qui)
+        try {
+          if (window.history && window.history.replaceState) {
+            window.history.replaceState(null, '', '?code=' + data.code);
+          }
+        } catch (e) {}
+
+      } else if (data.type === 'RECONNECT_FAILED') {
+        // Token non valido o room scaduta: passa al flusso normale di JOIN
+        console.log('[RECONNECT] fallito, provo JOIN normale');
+        clearToken(code);
+        hideLoading();
+        joinRoom();
+
+      } else if (data.type === 'ERROR') {
+        hideLoading();
+        alert(data.message);
+      }
+    };
+
+    ws.onerror = (err) => {
+      console.error('[RECONNECT] errore:', err);
+      hideLoading();
+    };
+
+    ws.onclose = (e) => {
+      console.log('[RECONNECT] onclose. Code:', e.code);
+    };
+  }
+
   async function processReceivedPayload(payload) {
     updateLoading('Recupero file dalla memoria volatile...', 'Preparazione del contenuto...', 45);
     await new Promise(r => setTimeout(r, 40));
 
-    // Testo
     if (payload.text) {
       document.getElementById('received-text-box').classList.remove('hidden');
       document.getElementById('received-text').value = payload.text;
@@ -692,7 +835,6 @@ app.get('/', (req, res) => {
       }
     }
 
-    // File
     if (payload.files && payload.files.length > 0) {
       receivedFiles = payload.files;
       const filesBox = document.getElementById('received-files-box');
@@ -716,7 +858,6 @@ app.get('/', (req, res) => {
           'Elaborazione file ' + (i + 1) + ' di ' + total + ': ' + fileObj.fileName,
           pct
         );
-        // Yield per permettere al browser di aggiornare la UI
         await new Promise(r => setTimeout(r, 0));
 
         const blob = base64ToBlob(fileObj.fileData, fileObj.fileType);
@@ -759,7 +900,6 @@ app.get('/', (req, res) => {
     const code = document.getElementById('code-input').value.trim();
     if (code.length !== 4) return alert('Inserisci un codice valido di 4 cifre.');
 
-    // Mostra subito l'overlay al ricevente (senza pulsante annulla)
     showReceiveLoading(
       'Verifica del codice...',
       'Controllo del codice ' + code + ' in corso...',
@@ -776,7 +916,6 @@ app.get('/', (req, res) => {
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'PAYLOAD') {
-        // Avvia l'elaborazione asincrona (che aggiornerà la UI progressivamente)
         processReceivedPayload(data.payload).catch(err => {
           console.error('[RECEIVE] errore processing:', err);
           hideReceiveLoading();
@@ -795,13 +934,11 @@ app.get('/', (req, res) => {
     };
 
     ws.onclose = (e) => {
-      // Se la connessione si chiude prima del completamento, nascondi l'overlay
       console.log('[WS] ricevente onclose. Code:', e.code);
       hideReceiveLoading();
     };
   }
 
-  // === Notifica download al mittente ===
   function notifyDownload(fileName) {
     try {
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -822,7 +959,6 @@ app.get('/', (req, res) => {
     });
   }
 
-  // === Scarica tutti i file come un unico ZIP ===
   async function downloadAllAsZip() {
     if (!receivedFiles || receivedFiles.length === 0) {
       return alert('Nessun file da comprimere.');
@@ -933,6 +1069,7 @@ app.get('/', (req, res) => {
 
 wss.on('connection', (ws, req) => {
   let currentRoom = null;
+  let currentRole = null; // 'sender' | 'receiver'
 
   const host = req.headers.host;
   const protocol = req.headers['x-forwarded-proto'] || 'http';
@@ -952,42 +1089,107 @@ wss.on('connection', (ws, req) => {
         
         const targetUrl = `${currentPublicUrl}?code=${code}`;
         const qrUrl = await QRCode.toDataURL(targetUrl);
+
+        // Token segreto noto solo al mittente (mai condiviso nel link/QR)
+        const senderToken = crypto.randomBytes(16).toString('hex');
         
         rooms.set(code, {
           payload: data.payload,
           senderWs: ws,
+          senderToken: senderToken,
           receiverWs: null,
+          receiverConnected: false,
+          downloadLog: [],
+          createdAt: Date.now(),
+          expiryMs: expiryMs,
+          qrUrl: qrUrl,
+          targetUrl: targetUrl,
+          expiryMinutes: expiryMinutes,
           timer: setTimeout(() => rooms.delete(code), expiryMs)
         });
 
         currentRoom = code;
+        currentRole = 'sender';
+
         ws.send(JSON.stringify({
           type: 'CREATED',
           code,
           qr: qrUrl,
           targetUrl,
-          expiryMinutes: expiryMinutes
+          expiryMinutes: expiryMinutes,
+          senderToken: senderToken
         }));
       } 
       
       else if (data.type === 'JOIN') {
         const room = rooms.get(data.code);
-        if (room) {
-          ws.send(JSON.stringify({ type: 'PAYLOAD', payload: room.payload }));
-          if (room.senderWs.readyState === WebSocket.OPEN) {
-            room.senderWs.send(JSON.stringify({ type: 'CONNECTED' }));
-          }
-          room.payload = null;
-          room.receiverWs = ws;
-          currentRoom = data.code;
-        } else {
+        if (!room) {
           ws.send(JSON.stringify({ type: 'ERROR', message: 'Codice errato o scaduto.' }));
+          return;
         }
+        if (!room.payload) {
+          ws.send(JSON.stringify({ type: 'ERROR', message: 'Contenuto già scaricato o non più disponibile.' }));
+          return;
+        }
+
+        ws.send(JSON.stringify({ type: 'PAYLOAD', payload: room.payload }));
+        if (room.senderWs && room.senderWs.readyState === WebSocket.OPEN) {
+          room.senderWs.send(JSON.stringify({ type: 'CONNECTED' }));
+        }
+        // Il payload può essere liberato dopo la consegna, ma la room resta
+        // fino alla scadenza per permettere notifiche di download e riconnessione mittente.
+        room.payload = null;
+        room.receiverWs = ws;
+        room.receiverConnected = true;
+        currentRoom = data.code;
+        currentRole = 'receiver';
+      }
+
+      else if (data.type === 'RECONNECT_SENDER') {
+        const room = rooms.get(data.code);
+        if (!room) {
+          ws.send(JSON.stringify({ type: 'RECONNECT_FAILED', reason: 'expired' }));
+          return;
+        }
+        if (!data.token || data.token !== room.senderToken) {
+          ws.send(JSON.stringify({ type: 'RECONNECT_FAILED', reason: 'invalid_token' }));
+          return;
+        }
+
+        // Ripristina il mittente
+        room.senderWs = ws;
+        currentRoom = data.code;
+        currentRole = 'sender';
+
+        const elapsed = Date.now() - room.createdAt;
+        const remainingMs = Math.max(0, room.expiryMs - elapsed);
+        const remainingSeconds = Math.floor(remainingMs / 1000);
+
+        ws.send(JSON.stringify({
+          type: 'RECONNECTED',
+          code: data.code,
+          qr: room.qrUrl,
+          targetUrl: room.targetUrl,
+          expiryMinutes: room.expiryMinutes,
+          remainingSeconds: remainingSeconds,
+          receiverConnected: room.receiverConnected,
+          downloadLog: room.downloadLog
+        }));
       }
 
       else if (data.type === 'DOWNLOADED') {
         const room = rooms.get(currentRoom);
-        if (room && room.senderWs && room.senderWs.readyState === WebSocket.OPEN) {
+        if (!room) return;
+
+        // Salva nel log della room
+        const logEntry = {
+          fileName: data.fileName || null,
+          timestamp: Date.now()
+        };
+        room.downloadLog.push(logEntry);
+
+        // Inoltra al mittente se connesso
+        if (room.senderWs && room.senderWs.readyState === WebSocket.OPEN) {
           room.senderWs.send(JSON.stringify({
             type: 'DOWNLOADED',
             fileName: data.fileName || null
@@ -1000,9 +1202,22 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.onclose = () => {
-    if (currentRoom && rooms.has(currentRoom)) {
-      clearTimeout(rooms.get(currentRoom).timer);
-      rooms.delete(currentRoom);
+    // IMPORTANTE: NON cancelliamo la room alla disconnessione.
+    // La room vive fino alla scadenza del timer, indipendentemente da chi si disconnette.
+    // Se il mittente si disconnette, azzeriamo solo il riferimento per evitare
+    // errori nell'inoltro delle notifiche download.
+    if (!currentRoom) return;
+    const room = rooms.get(currentRoom);
+    if (!room) return;
+
+    if (currentRole === 'sender') {
+      if (room.senderWs === ws) {
+        room.senderWs = null;
+      }
+    } else if (currentRole === 'receiver') {
+      if (room.receiverWs === ws) {
+        room.receiverWs = null;
+      }
     }
   };
 });
