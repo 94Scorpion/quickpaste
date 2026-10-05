@@ -83,6 +83,51 @@ app.get('/', (req, res) => {
     
     .btn-secondary { background: #e2e8f0; color: #334155; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; border: none; cursor: pointer; margin-left: 5px; }
     .btn-secondary:hover { background: #cbd5e1; }
+
+    /* Overlay di caricamento */
+    #loading-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(15, 23, 42, 0.78);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      color: white;
+      padding: 20px;
+      text-align: center;
+      box-sizing: border-box;
+      backdrop-filter: blur(2px);
+    }
+    #loading-overlay.hidden { display: none; }
+    .spinner {
+      width: 56px;
+      height: 56px;
+      border: 5px solid rgba(255,255,255,0.2);
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: qp-spin 0.9s linear infinite;
+      margin-bottom: 18px;
+    }
+    @keyframes qp-spin { to { transform: rotate(360deg); } }
+    #loading-text { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+    #loading-subtext { font-size: 12px; color: #cbd5e1; max-width: 340px; line-height: 1.5; }
+    #loading-progress {
+      width: 260px;
+      max-width: 80vw;
+      height: 6px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 4px;
+      margin-top: 18px;
+      overflow: hidden;
+    }
+    #loading-progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #2563eb, #3b82f6);
+      transition: width 0.3s ease;
+    }
   </style>
 </head>
 <body>
@@ -165,6 +210,14 @@ app.get('/', (req, res) => {
       </div>
     </div>
 
+  </div>
+
+  <!-- Overlay di caricamento -->
+  <div id="loading-overlay" class="hidden">
+    <div class="spinner"></div>
+    <div id="loading-text">Preparazione in corso...</div>
+    <div id="loading-subtext">Sto leggendo i file selezionati.</div>
+    <div id="loading-progress"><div id="loading-progress-bar"></div></div>
   </div>
 
   <script>
@@ -292,6 +345,27 @@ app.get('/', (req, res) => {
     }, 1000);
   }
 
+  // === Funzioni overlay di caricamento ===
+  function showLoading(text, subtext, percent) {
+    document.getElementById('loading-text').innerText = text || 'Attendere...';
+    document.getElementById('loading-subtext').innerText = subtext || '';
+    document.getElementById('loading-progress-bar').style.width = (percent || 0) + '%';
+    document.getElementById('loading-overlay').classList.remove('hidden');
+  }
+
+  function updateLoading(text, subtext, percent) {
+    if (text) document.getElementById('loading-text').innerText = text;
+    if (subtext) document.getElementById('loading-subtext').innerText = subtext;
+    if (typeof percent === 'number') {
+      document.getElementById('loading-progress-bar').style.width = percent + '%';
+    }
+  }
+
+  function hideLoading() {
+    document.getElementById('loading-overlay').classList.add('hidden');
+    document.getElementById('loading-progress-bar').style.width = '0%';
+  }
+
   async function createRoom() {
     console.log('[CREATE] avviato');
     const text = document.getElementById('text-input').value.trim();
@@ -305,10 +379,25 @@ app.get('/', (req, res) => {
       files: []
     };
 
+    // Mostra subito l'overlay: l'utente capisce che sta succedendo qualcosa
+    showLoading(
+      'Preparazione in corso...',
+      selectedFilesArray.length > 0
+        ? 'Lettura di ' + selectedFilesArray.length + ' file...'
+        : 'Preparazione del testo...',
+      5
+    );
+
     try {
       if (selectedFilesArray.length > 0) {
         for (let i = 0; i < selectedFilesArray.length; i++) {
           const file = selectedFilesArray[i];
+          const pct = 5 + Math.round((i / selectedFilesArray.length) * 65);
+          updateLoading(
+            'Lettura file ' + (i + 1) + ' di ' + selectedFilesArray.length,
+            file.name + ' (' + formatBytes(file.size) + ')',
+            pct
+          );
           console.log('[CREATE] leggo file:', file.name, file.size);
           const arrayBuffer = await file.arrayBuffer();
           const base64 = arrayBufferToBase64(arrayBuffer);
@@ -322,17 +411,22 @@ app.get('/', (req, res) => {
       }
     } catch (err) {
       console.error('[CREATE] errore lettura file:', err);
+      hideLoading();
       return alert('Errore nella lettura dei file: ' + err.message);
     }
+
+    updateLoading('Connessione al server...', 'Sto aprendo il canale di trasferimento.', 75);
 
     ws = new WebSocket(protocol + '//' + location.host);
 
     ws.onopen = () => {
+      updateLoading('Invio in corso...', 'Trasferimento dei dati al server, attendere prego.', 88);
       console.log('[WS] onopen, invio CREATE');
       try {
         ws.send(JSON.stringify({ type: 'CREATE', payload: payloadData }));
       } catch (e) {
         console.error('[WS] errore send:', e);
+        hideLoading();
         alert('Errore invio: ' + e.message);
       }
     };
@@ -340,13 +434,15 @@ app.get('/', (req, res) => {
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'CREATED') {
+        updateLoading('Completato!', 'Codice generato con successo.', 100);
+        setTimeout(hideLoading, 300);
+
         document.getElementById('send-section').classList.add('hidden');
         document.getElementById('result-section').classList.remove('hidden');
         document.getElementById('room-code').innerText = data.code;
         document.getElementById('qrcode').innerHTML = '<img src="' + data.qr + '" width="180" height="180" />';
         generatedTargetUrl = data.targetUrl;
 
-        // === QUI LA CORREZIONE: niente regex, solo metodi stringa ===
         var displayUrl = data.targetUrl;
         var sepIdx = displayUrl.indexOf('://');
         if (sepIdx !== -1) {
@@ -363,12 +459,16 @@ app.get('/', (req, res) => {
 
     ws.onerror = (err) => {
       console.error('[WS] onerror:', err);
+      hideLoading();
     };
 
     ws.onclose = (e) => {
       console.log('[WS] onclose. Code:', e.code);
       if (e.code === 1009) {
+        hideLoading();
         alert('Payload troppo grande! Il server ha rifiutato il messaggio. Riduci i file.');
+      } else if (e.code !== 1000) {
+        hideLoading();
       }
     };
   }
