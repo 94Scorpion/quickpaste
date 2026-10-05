@@ -129,6 +129,29 @@ app.get('/', (req, res) => {
       background: linear-gradient(90deg, #2563eb, #3b82f6);
       transition: width 0.3s ease;
     }
+    #cancel-loading-btn {
+      margin-top: 20px;
+      background: #ef4444;
+      max-width: 200px;
+    }
+    #cancel-loading-btn:hover { background: #dc2626; }
+
+    /* Log download mittente */
+    #download-log {
+      margin-top: 12px;
+      text-align: left;
+      font-size: 12px;
+      color: #059669;
+      max-height: 150px;
+      overflow-y: auto;
+      padding: 8px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 8px;
+      line-height: 1.5;
+    }
+    #download-log:empty { display: none; }
+    #download-log .dl-entry { margin-bottom: 4px; }
   </style>
 </head>
 <body>
@@ -146,7 +169,8 @@ app.get('/', (req, res) => {
 
     <!-- INVIA -->
     <div id="send-section">
-      <textarea id="text-input" placeholder="Incolla qui testo, link o note..."></textarea>
+      <textarea id="text-input" placeholder="Incolla qui testo, link o note..." oninput="updateCharCounter()" maxlength="100000"></textarea>
+      <div id="char-counter" style="font-size: 11px; color: #94a3b8; text-align: right; margin-top: -8px; margin-bottom: 10px;">0 / 100000 caratteri</div>
       
       <div style="text-align: left; margin-bottom: 5px;">
         <label style="font-size: 12px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Seleziona Foto / File (Multipli):</label>
@@ -186,6 +210,12 @@ app.get('/', (req, res) => {
         <button class="btn-secondary" onclick="copyLink()">📋 Copia Link</button>
       </div>
       <p style="color: #059669; font-size: 14px; font-weight: 600; margin-top: 15px;" id="status-msg">In attesa del dispositivo ricevente...</p>
+      
+      <!-- Log notifiche download ricevute dal mittente -->
+      <div id="download-log"></div>
+
+      <!-- Pulsante nuovo trasferimento -->
+      <button onclick="resetApp()" style="background: #64748b; margin-top: 12px;">↩️ Nuovo Trasferimento</button>
     </div>
 
     <div class="divider"><span>OPPURE RICEVI</span></div>
@@ -234,12 +264,13 @@ app.get('/', (req, res) => {
     <div id="loading-text">Preparazione in corso...</div>
     <div id="loading-subtext">Sto leggendo i file selezionati.</div>
     <div id="loading-progress"><div id="loading-progress-bar"></div></div>
+    <button id="cancel-loading-btn" onclick="cancelLoading()">❌ Annulla</button>
   </div>
 
   <script>
   // ============================================================
   // NOTA IMPORTANTE: questo script è dentro un template literal di Node.
-  // Evitiamo regex con slash per non rompere il parsing del browser.
+  // Evitiamo regex con slash problematici.
   // ============================================================
 
   console.log('[SCRIPT] QuickPaste caricato correttamente');
@@ -250,6 +281,7 @@ app.get('/', (req, res) => {
   let countdownInterval = null;
   let receivedFiles = [];
   let selectedFilesArray = [];
+  let cancelRequested = false;
 
   window.onload = () => {
     console.log('[INIT] window.onload');
@@ -260,7 +292,35 @@ app.get('/', (req, res) => {
       joinRoom();
     }
     setupDragAndDropGlobal();
+    updateCharCounter();
   };
+
+  // === Utility: escape HTML ===
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  // === Contatore caratteri textarea ===
+  function updateCharCounter() {
+    const el = document.getElementById('text-input');
+    const counter = document.getElementById('char-counter');
+    if (!el || !counter) return;
+    const len = el.value.length;
+    counter.innerText = len + ' / 100000 caratteri';
+    if (len > 90000) {
+      counter.style.color = '#dc2626';
+    } else if (len > 70000) {
+      counter.style.color = '#d97706';
+    } else {
+      counter.style.color = '#94a3b8';
+    }
+  }
 
   function setupDragAndDropGlobal() {
     console.log('[INIT] setupDragAndDropGlobal');
@@ -342,7 +402,6 @@ app.get('/', (req, res) => {
     } catch (e) {}
   }
 
-  // Formatta secondi totali in stringa HH:MM:SS o MM:SS
   function formatDuration(totalSeconds) {
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -354,11 +413,9 @@ app.get('/', (req, res) => {
     return pad(minutes) + ':' + pad(seconds);
   }
 
-  // Countdown parametrico (secondi totali)
   function startCountdown(totalSeconds) {
     let duration = (typeof totalSeconds === 'number' && totalSeconds > 0) ? totalSeconds : 300;
     const display = document.getElementById('countdown');
-    // Reset aspetto in caso di riutilizzo
     display.style.background = '#fef3c7';
     display.style.color = '#92400e';
     display.innerText = '⏱️ Scade tra: ' + formatDuration(duration);
@@ -396,15 +453,74 @@ app.get('/', (req, res) => {
     document.getElementById('loading-progress-bar').style.width = '0%';
   }
 
+  // === Annulla caricamento in corso ===
+  function cancelLoading() {
+    console.log('[CANCEL] richiesto annullamento');
+    cancelRequested = true;
+    try {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+    } catch (e) {}
+    hideLoading();
+    updateLoading('Annullato', '', 0);
+  }
+
+  // === Reset completo (Nuovo trasferimento) ===
+  function resetApp() {
+    console.log('[RESET] nuovo trasferimento');
+    try {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+    } catch (e) {}
+    clearInterval(countdownInterval);
+    cancelRequested = false;
+
+    document.getElementById('send-section').classList.remove('hidden');
+    document.getElementById('result-section').classList.add('hidden');
+
+    document.getElementById('text-input').value = '';
+    document.getElementById('file-input').value = '';
+    document.getElementById('direct-link-text').innerText = '';
+    document.getElementById('room-code').innerText = '----';
+    document.getElementById('qrcode').innerHTML = '';
+    document.getElementById('status-msg').innerText = 'In attesa del dispositivo ricevente...';
+    document.getElementById('download-log').innerHTML = '';
+    document.getElementById('countdown').style.background = '#fef3c7';
+    document.getElementById('countdown').style.color = '#92400e';
+    document.getElementById('countdown').innerText = '⏱️ Scade tra: 05:00';
+
+    selectedFilesArray = [];
+    receivedFiles = [];
+    generatedTargetUrl = '';
+    updateFileLabelText(0);
+    updateCharCounter();
+  }
+
+  // === Log notifiche download (lato mittente) ===
+  function appendDownloadLog(fileName) {
+    const log = document.getElementById('download-log');
+    if (!log) return;
+    const now = new Date();
+    const pad = (n) => (n < 10 ? '0' + n : '' + n);
+    const time = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+    const entry = document.createElement('div');
+    entry.className = 'dl-entry';
+    entry.innerHTML = '📥 <strong>' + time + '</strong> — ' + (fileName ? 'Scaricato: <em>' + escapeHtml(fileName) + '</em>' : 'Un file scaricato');
+    log.appendChild(entry);
+    log.scrollTop = log.scrollHeight;
+  }
+
   async function createRoom() {
     console.log('[CREATE] avviato');
+    cancelRequested = false;
     const text = document.getElementById('text-input').value.trim();
 
     if (!text && selectedFilesArray.length === 0) {
       return alert('Inserisci del testo oppure seleziona almeno un file/foto!');
     }
 
-    // Legge il tempo di scadenza selezionato (in minuti)
     const expiryMinutes = parseInt(document.getElementById('expiry-select').value, 10) || 5;
 
     let payloadData = {
@@ -412,7 +528,6 @@ app.get('/', (req, res) => {
       files: []
     };
 
-    // Mostra subito l'overlay: l'utente capisce che sta succedendo qualcosa
     showLoading(
       'Preparazione in corso...',
       selectedFilesArray.length > 0
@@ -424,6 +539,12 @@ app.get('/', (req, res) => {
     try {
       if (selectedFilesArray.length > 0) {
         for (let i = 0; i < selectedFilesArray.length; i++) {
+          if (cancelRequested) {
+            cancelRequested = false;
+            hideLoading();
+            return;
+          }
+
           const file = selectedFilesArray[i];
           const pct = 5 + Math.round((i / selectedFilesArray.length) * 65);
           updateLoading(
@@ -433,6 +554,13 @@ app.get('/', (req, res) => {
           );
           console.log('[CREATE] leggo file:', file.name, file.size);
           const arrayBuffer = await file.arrayBuffer();
+
+          if (cancelRequested) {
+            cancelRequested = false;
+            hideLoading();
+            return;
+          }
+
           const base64 = arrayBufferToBase64(arrayBuffer);
           payloadData.files.push({
             fileName: file.name,
@@ -448,12 +576,22 @@ app.get('/', (req, res) => {
       return alert('Errore nella lettura dei file: ' + err.message);
     }
 
-    updateLoading('Connessione...', 'Sto aprendo il canale di trasferimento.', 75);
+    if (cancelRequested) {
+      cancelRequested = false;
+      hideLoading();
+      return;
+    }
+
+    updateLoading('Connessione al server...', 'Sto aprendo il canale di trasferimento.', 75);
 
     ws = new WebSocket(protocol + '//' + location.host);
 
     ws.onopen = () => {
-      updateLoading('Invio in corso...', 'Trasferimento dei dati alla memoria volatile, attendere prego.', 88);
+      if (cancelRequested) {
+        try { ws.close(); } catch (e) {}
+        return;
+      }
+      updateLoading('Invio in corso...', 'Trasferimento dei dati al server, attendere prego.', 88);
       console.log('[WS] onopen, invio CREATE con scadenza', expiryMinutes, 'minuti');
       try {
         ws.send(JSON.stringify({ type: 'CREATE', payload: payloadData, expiryMinutes: expiryMinutes }));
@@ -470,6 +608,14 @@ app.get('/', (req, res) => {
         updateLoading('Completato!', 'Codice generato con successo.', 100);
         setTimeout(hideLoading, 300);
 
+        // === Copia automatica del codice negli appunti ===
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(data.code).catch(() => {});
+            console.log('[CLIPBOARD] codice copiato:', data.code);
+          }
+        } catch (e) {}
+
         document.getElementById('send-section').classList.add('hidden');
         document.getElementById('result-section').classList.remove('hidden');
         document.getElementById('room-code').innerText = data.code;
@@ -483,13 +629,16 @@ app.get('/', (req, res) => {
         }
         document.getElementById('direct-link-text').innerText = 'Link: ' + displayUrl;
 
-        // Usa la durata restituita dal server (in minuti) per il countdown
         var serverExpiryMinutes = (typeof data.expiryMinutes === 'number' && data.expiryMinutes > 0)
           ? data.expiryMinutes
           : expiryMinutes;
         startCountdown(serverExpiryMinutes * 60);
       } else if (data.type === 'CONNECTED') {
         document.getElementById('status-msg').innerText = '✅ Dispositivo connesso! Trasferimento completato.';
+        triggerFeedback();
+      } else if (data.type === 'DOWNLOADED') {
+        // === Notifica di download ricevuta dal destinatario ===
+        appendDownloadLog(data.fileName || null);
         triggerFeedback();
       }
     };
@@ -551,6 +700,8 @@ app.get('/', (req, res) => {
             const blobUrl = URL.createObjectURL(blob);
             fileObj.blobUrl = blobUrl;
 
+            const safeFileName = escapeHtml(fileObj.fileName);
+
             let previewHtml = '<div class="file-preview" style="display:flex;align-items:center;justify-content:center;font-size:20px;">📄</div>';
             if (fileObj.fileType.startsWith('image/')) {
               previewHtml = '<img src="' + blobUrl + '" class="file-preview" alt="preview" />';
@@ -562,11 +713,11 @@ app.get('/', (req, res) => {
             itemDiv.className = 'file-item';
             itemDiv.innerHTML = previewHtml +
               '<div class="file-info">' +
-                '<strong>' + fileObj.fileName + '</strong><br>' +
+                '<strong>' + safeFileName + '</strong><br>' +
                 '<span style="color: #64748b; font-size: 11px;">' + formatBytes(blob.size) + '</span>' +
                 '<div id="status-' + index + '" style="color: #059669; font-size: 11px; font-weight: bold; margin-top: 3px; display: none;">✅ Salvato nei download!</div>' +
               '</div>' +
-              '<a href="' + blobUrl + '" download="' + fileObj.fileName + '" id="dl-btn-' + index + '" class="download-btn" onclick="handleDownload(this, &quot;status-' + index + '&quot;)">💾 Scarica</a>';
+              '<a href="' + blobUrl + '" download="' + safeFileName + '" id="dl-btn-' + index + '" class="download-btn" onclick="handleDownload(this, &quot;status-' + index + '&quot;, &quot;' + safeFileName + '&quot;)">💾 Scarica</a>';
             
             filesList.appendChild(itemDiv);
           });
@@ -575,6 +726,18 @@ app.get('/', (req, res) => {
         alert(data.message);
       }
     };
+  }
+
+  // === Notifica download al mittente ===
+  function notifyDownload(fileName) {
+    try {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'DOWNLOADED', fileName: fileName || null }));
+        console.log('[DOWNLOAD] notifica inviata:', fileName);
+      }
+    } catch (e) {
+      console.error('[DOWNLOAD] errore notifica:', e);
+    }
   }
 
   function downloadAllFiles() {
@@ -586,11 +749,13 @@ app.get('/', (req, res) => {
     });
   }
 
-  function handleDownload(element, statusId) {
+  function handleDownload(element, statusId, fileName) {
     element.innerText = '✅ Scaricato';
     element.style.background = '#0284c7';
     const statusEl = document.getElementById(statusId);
     if (statusEl) statusEl.style.display = 'block';
+    // Notifica il mittente che il file è stato scaricato
+    notifyDownload(fileName || null);
   }
 
   function copyLink() {
@@ -656,7 +821,6 @@ wss.on('connection', (ws, req) => {
       if (data.type === 'CREATE') {
         const code = Math.floor(1000 + Math.random() * 9000).toString();
 
-        // Legge la durata scelta (in minuti), default 5 minuti
         const expiryMinutes = (typeof data.expiryMinutes === 'number' && data.expiryMinutes > 0)
           ? data.expiryMinutes
           : 5;
@@ -668,6 +832,7 @@ wss.on('connection', (ws, req) => {
         rooms.set(code, {
           payload: data.payload,
           senderWs: ws,
+          receiverWs: null,
           timer: setTimeout(() => rooms.delete(code), expiryMs)
         });
 
@@ -688,10 +853,24 @@ wss.on('connection', (ws, req) => {
           if (room.senderWs.readyState === WebSocket.OPEN) {
             room.senderWs.send(JSON.stringify({ type: 'CONNECTED' }));
           }
-          clearTimeout(room.timer);
-          rooms.delete(data.code);
+          // Non cancelliamo la room: la teniamo per inoltrare le notifiche di download.
+          // Liberiamo solo la memoria del payload (non più necessaria).
+          room.payload = null;
+          room.receiverWs = ws;
+          currentRoom = data.code;
         } else {
           ws.send(JSON.stringify({ type: 'ERROR', message: 'Codice errato o scaduto.' }));
+        }
+      }
+
+      // === Inoltro notifica di download dal destinatario al mittente ===
+      else if (data.type === 'DOWNLOADED') {
+        const room = rooms.get(currentRoom);
+        if (room && room.senderWs && room.senderWs.readyState === WebSocket.OPEN) {
+          room.senderWs.send(JSON.stringify({
+            type: 'DOWNLOADED',
+            fileName: data.fileName || null
+          }));
         }
       }
     } catch (e) {
