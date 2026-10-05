@@ -114,7 +114,7 @@ app.get('/', (req, res) => {
         <li><strong>Condivisione responsabile:</strong> Presta attenzione a chi fornisci il codice o il link di trasferimento.</li>
       </ul>
       <div class="disclaimer">
-        ⚠️ <strong>Note di Responsabilità:</strong> Il servizio viene fornito "così com'è". L'utente si assume la piena responsabilità di conservare e salvare i propri dati. Se il destinatario non effettua il download prima dell'eliminazione del file o dello scadere del timer, il contenuto andrà perso definitivamente.
+        ⚠️ <strong>Note di Responsabilità:</strong> Il servizio viene fornito "così com'è". L'utente si assume la piena responsabilità di conservare e salvare i propri dati. Se il destinatario non effettua il download prima dell'eliminazione del file o dello scadere del timer, il contenuto andrà perso e dovrà essere ricaricato.
       </div>
     </div>
 
