@@ -415,12 +415,12 @@ app.get('/', (req, res) => {
       return alert('Errore nella lettura dei file: ' + err.message);
     }
 
-    updateLoading('Connessione al server...', 'Sto aprendo il canale di trasferimento.', 75);
+    updateLoading('Upload...', 'Sto aprendo il canale di trasferimento.', 75);
 
     ws = new WebSocket(protocol + '//' + location.host);
 
     ws.onopen = () => {
-      updateLoading('Invio in corso...', 'Trasferimento dei dati al server, attendere prego.', 88);
+      updateLoading('Invio in corso...', 'Trasferimento dei dati alla memoria volatile, attendere prego.', 88);
       console.log('[WS] onopen, invio CREATE');
       try {
         ws.send(JSON.stringify({ type: 'CREATE', payload: payloadData }));
